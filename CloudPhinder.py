@@ -1,26 +1,25 @@
 #!/usr/bin/env python
 """                                                                            
-: Variant of Volker Springel's SUBFIND algorithm that identifies the largest possible self-gravitating gas structures 
+: Variant of Volker Springel's SUBFIND algorithm that identifies the largest possible self-gravitating structures of a certain particle type. THIS ASSUMES PHYSICAL UNITS IN THE SNAPSHOT!
 
 Usage: CloudPhinder.py <files> ... [options]
 
 Options:                                                                       
    -h --help                  Show this screen.
    --ptype=<N>                GIZMO particle type to analyze [default: 0]
-   --mode=<modename>          Whether clouds boundaries are defined as density isosurfaces or potential isosurfaces [default: density]
-   --recompute_potential      Whether to trust the potential found in the snapshot, and if not, recompute it (only needed for potential mode) [default: False]
    --G=<G>                    Gravitational constant to use; should be consistent with what was used in the simulation. [default: 4.301e4]
    --boxsize=<L>              Box size of the simulation; for neighbour-search purposes. [default: None]
    --cluster_ngb=<N>          Length of particle's neighbour list. [default: 32]
    --nmin=<n>                 Minimum particle number density to cut at, in cm^-3 [default: 1]
    --softening=<L>            Force softening for potential, if species does not have adaptive softening. [default: 1e-5]
    --fuzz=<L>                 Randomly perturb particle positions by this small fraction to avoid problems with particles at the same position in 32bit floating point precision data [default: 0]
+   --np=<N>                   Number of snapshots to run in parallel [default: 1]
 """
-#NOTE: should compute nearest-neighbor list BEFORE cutting underdense particles, otherwise neighbor lists can jump between clumps
+
 
 alpha_crit = 2
-potential_mode = False
-nproc=1
+#potential_mode = False
+
 
 import h5py
 from numba import jit, vectorize
@@ -117,7 +116,7 @@ def SaveArrayDict(path, arrdict):
 
 #@jit 
 def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
-    if not potential_mode: phi = -rho
+    phi = -rho
 #    plt.hist(np.log10(-phi)); plt.show()
     order = phi.argsort()
     phi[:] = phi[order]
@@ -246,7 +245,7 @@ def ComputeClouds(filename, options):
     boxsize = options["--boxsize"]
     ptype = "PartType"+ options["--ptype"]
 
-    recompute_potential = options["--recompute_potential"]
+#    recompute_potential = options["--recompute_potential"]
     softening = float(options["--softening"])
     if boxsize != "None":
         boxsize = float(boxsize)
@@ -307,7 +306,7 @@ def ComputeClouds(filename, options):
     else:
        # h_ags = meshoid.meshoid(x,m,des_ngb=cluster_ngb).SmoothingLength() #np.ones_like(m)*softening #(m/rho * cluster_ngb)**(1./3) #
         h_ags = np.ones_like(m)*softening
-    if "Potential" in F[ptype].keys() and not recompute_potential:
+    if "Potential" in F[ptype].keys(): # and not recompute_potential:
         phi = np.array(F[ptype]["Potential"])[criteria]
     else:
         phi = Potential(x, m, h_ags)
@@ -396,6 +395,7 @@ def ComputeClouds(filename, options):
     
 def main():
     options = docopt(__doc__)
+    nproc=int(options["--np"])
     if nproc==1:
         for f in options["<files>"]:
             print(f)
