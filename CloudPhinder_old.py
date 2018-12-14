@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 """                                                                            
-: Variant of Volker Springel's SUBFIND algorithm that identifies the largest possible self-gravitating structures of a certain particle type. THIS ASSUMES PHYSICAL UNITS IN THE SNAPSHOT! This, newer version relies on the load_from_snapshot routine from GIZMO.
+: Variant of Volker Springel's SUBFIND algorithm that identifies the largest possible self-gravitating structures of a certain particle type. THIS ASSUMES PHYSICAL UNITS IN THE SNAPSHOT!
 
-Usage: CloudPhinder.py <snapshots> ... [options]
+Usage: CloudPhinder.py <files> ... [options]
 
 Options:                                                                       
    -h --help                  Show this screen.
-   --snapdir=<name>           path to the snapshot folder, e.g. /work/simulations/outputs
-   --outputfolder=<name>      Specifies the folder to save the outputs to, [default: output]
    --ptype=<N>                GIZMO particle type to analyze [default: 0]
    --G=<G>                    Gravitational constant to use; should be consistent with what was used in the simulation. [default: 4.301e4]
    --boxsize=<L>              Box size of the simulation; for neighbour-search purposes. [default: None]
@@ -22,7 +20,7 @@ Options:
 alpha_crit = 2
 #potential_mode = False
 
-import load_from_snapshot #routine to load snapshots from GIZMo files
+
 import h5py
 from numba import jit, vectorize
 from joblib import Parallel, delayed
@@ -37,8 +35,6 @@ from collections import OrderedDict
 import pykdgrav
 from pykdgrav.bruteforce import BruteForcePotential
 from os import path
-from os import getcwd
-from os import mkdir
 from natsort import natsorted
 
 @jit
@@ -239,28 +235,17 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
     return groups, bound_groups, assigned_group
 
     
-def ComputeClouds(snapnum, options):
-    snapdir = options["--snapdir"]
-    if not snapdir:
-        snapdir = getcwd()
-        print 'Snapshot directory not specified, using local directory of ', snapdir
-    outputfolder = options["--outputfolder"]
-    if not path.isdir(outputfolder):
-        mkdir(outputfolder)
-    #Check if there is a snapshot like that
-    fname_found, _, _ =load_from_snapshot.check_if_filename_exists(snapdir,snapnum)
-    if fname_found!='NULL':    
-        print 'Snapshot ', snapnum, ' found in ', snapdir
-    else:
-        print 'Snapshot ', snapnum, ' NOT found in ', snapdir, '\n Skipping it...'
-        return
+def ComputeClouds(filename, options):
+    n = filename.split("_")[1].split(".")[0]
+    nmin = float(options["--nmin"])
+    if path.isfile("bound_%s_%g.dat"%(n,nmin)): return
+    print(filename)
     cluster_ngb = int(float(options["--cluster_ngb"]) + 0.5)
     G = float(options["--G"])
     boxsize = options["--boxsize"]
-    ptype = int(options["--ptype"])
-    nmin = float(options["--nmin"])
+    ptype = "PartType"+ options["--ptype"]
 
-    #recompute_potential = options["--recompute_potential"]
+#    recompute_potential = options["--recompute_potential"]
     softening = float(options["--softening"])
     if boxsize != "None":
         boxsize = float(boxsize)
@@ -269,26 +254,32 @@ def ComputeClouds(snapnum, options):
     fuzz = float(options["--fuzz"])
 
 
-    #Read gas properties
-    m = load_from_snapshot.load_from_snapshot("Masses",ptype,snapdir,snapnum)
+    if path.isfile(filename):
+        F = h5py.File(filename,'r')
+    else:
+        print("Could not find "+filename)
+        return
+    if not ptype in F.keys():
+        print("Particles of desired type not found!")
+    
+    m = np.array(F[ptype]["Masses"])
     criteria = np.ones(len(m),dtype=np.bool)
 
     if len(m) < cluster_ngb:
         print("Not enough particles for meaningful cluster analysis!")
         return
 
-    x = load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum)
+    x = np.array(F[ptype]["Coordinates"])
 
-    ids = load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum)
-    u = (load_from_snapshot.load_from_snapshot("InternalEnergy",ptype,snapdir,snapnum) if ptype==0 else np.zeros_like(m))
-    keys = load_from_snapshot.load_from_snapshot("keys",ptype,snapdir,snapnum)
-    if "Density" in keys:
-        rho = load_from_snapshot.load_from_snapshot("Density",ptype,snapdir,snapnum)
+    ids = np.array(F[ptype]["ParticleIDs"])
+    u = (np.array(F[ptype]["InternalEnergy"]) if ptype=="PartType0" else np.zeros_like(m))
+    if "Density" in F[ptype].keys():
+        rho = np.array(F[ptype]["Density"])
     else:
         rho = meshoid.meshoid(x,m,des_ngb=cluster_ngb).Density()
     print(rho)
         #ngbdist = meshoid.meshoid(x,m,des_ngb=cluster_ngb).ngbdist
-    zz = load_from_snapshot.load_from_snapshot("Metallicity",ptype,snapdir,snapnum)
+    zz = np.array(F[ptype]["Metallicity"])
 #    rho = meshoid.meshoid(x,m).KernelAverage(rho)
 #    c = np.average(x,axis=0,weights=rho**2)
 #    x = x - c
@@ -301,22 +292,22 @@ def ComputeClouds(snapnum, options):
     m = m[criteria]
     x = x[criteria]
     u = u[criteria]
-    v = load_from_snapshot.load_from_snapshot("Velocities",ptype,snapdir,snapnum)[criteria]
+    v = np.array(F[ptype]["Velocities"])[criteria]
     rho = rho[criteria]
     ids = ids[criteria]
     zz = zz[criteria]
 #    ngbdist, ngb = ngbdist[criteria]
     if fuzz: x += np.random.normal(size=x.shape)*x.std()*fuzz
 
-    if "AGS-Softening" in keys:
-        h_ags = load_from_snapshot.load_from_snapshot("AGS-Softening",ptype,snapdir,snapnum)[criteria]
-    elif "SmoothingLength" in keys:
-        h_ags = load_from_snapshot.load_from_snapshot("SmoothingLength",ptype,snapdir,snapnum)[criteria]
+    if "AGS-Softening" in F[ptype].keys():
+        h_ags = np.array(F[ptype]["AGS-Softening"])[criteria]
+    elif "SmoothingLength" in F[ptype].keys():
+        h_ags = np.array(F[ptype]["SmoothingLength"])[criteria]
     else:
        # h_ags = meshoid.meshoid(x,m,des_ngb=cluster_ngb).SmoothingLength() #np.ones_like(m)*softening #(m/rho * cluster_ngb)**(1./3) #
         h_ags = np.ones_like(m)*softening
-    if "Potential" in keys: # and not recompute_potential:
-        phi = load_from_snapshot.load_from_snapshot("Potential",ptype,snapdir,snapnum)[criteria]
+    if "Potential" in F[ptype].keys(): # and not recompute_potential:
+        phi = np.array(F[ptype]["Potential"])[criteria]
     else:
         phi = Potential(x, m, h_ags)
 
@@ -344,17 +335,10 @@ def ComputeClouds(snapnum, options):
 #    bound_data["SigmaEff"] = []
     
 
-    hdf5_outfilename = outputfolder + '/'+ "Clouds_%s.hdf5"%(snapnum)
-    Fout = h5py.File(hdf5_outfilename, 'w')
+
+    Fout = h5py.File("Clouds_%s_%g.hdf5"%(n,nmin), 'w')
 
     i = 0
-    fids = load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum)
-    #Store all keys in memory to reduce I/O load
-    print '\t Reading all data for Particle Type ', ptype
-    alldata = [];
-    for k in keys:
-        alldata.append(load_from_snapshot.load_from_snapshot(k,ptype,snapdir,snapnum))
-    print '\t Reading done, iterating over clouds...'
     for k,c in bound_groups.items():
         bound_data["Mass"].append(m[c].sum())
         bound_data["NumParticles"].append(len(c))
@@ -374,21 +358,37 @@ def ComputeClouds(snapnum, options):
         N = len(c)
 
         Fout.create_group(cluster_id)
+        fids = np.array(F[ptype]["ParticleIDs"])
         idx = np.in1d(fids, ids[c])
-        for j in range(len(keys)):
-            k = keys[j]
-            Fout[cluster_id].create_dataset('PartType'+str(ptype)+"/"+k, data = alldata[j][idx])
+        for k in F[ptype].keys():
+            Fout[cluster_id].create_dataset(ptype+"/"+k, data = np.array(F[ptype][k])[idx])
+#            Fout[cluster_id].create_dataset("Coordinates", data=x[c])
+            # Fout[cluster_id].create_dataset("Velocities", data=v[c])
+            # Fout[cluster_id].create_dataset("Metallicity", data=zz[c])
+            # Fout[cluster_id].create_dataset("Masses", data=m[c])
+            # Fout[cluster_id].create_dataset("InternalEnergy", data=u[c])
+            # Fout[cluster_id].create_dataset("Density", data=rho[c])
+            # Fout[cluster_id].create_dataset("SmoothingLength", data=h_ags[c])
+            # Fout[cluster_id].create_dataset("ParticleIDs", data=ids[c])
         i += 1
-        print "\t \t ",cluster_id
+        
 
     print("Done grouping bound clusters!")
 
-       
+#                print "Reduced chi^2: %g Relative mass error: %g"%(EFF_rChiSqr,EFF_dm/mc[bound].sum())
+#    cluster_masses = np.array(bound_data["Mass"])
+#    bound_clusters = [b for b in bound_groups.values()]
+     #np.array(bound_clusters)[np.array(bound_data["Mass"]).argsort()[::-1]]
+    
+    # write to Clusters_xxx.hdf5
+#    for i, c in enumerate(bound_clusters):
+
+        
     Fout.close()
+    F.close()
     
     #now save the ascii data files
-    dat_outfilename = outputfolder + '/' +"bound_%s.dat"%(snapnum)
-    SaveArrayDict(dat_outfilename, bound_data)
+    SaveArrayDict("bound_%s_%g.dat"%(n,nmin), bound_data)
 #    SaveArrayDict(filename.split("snapshot")[0] + "unbound_%s.dat"%n, unbound_data)
 
     
@@ -397,11 +397,11 @@ def main():
     options = docopt(__doc__)
     nproc=int(options["--np"])
     if nproc==1:
-        for f in options["<snapshots>"]:
+        for f in options["<files>"]:
             print(f)
             ComputeClouds(f, options)
     else:
-        print(natsorted(options["<snapshots>"]))
-        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in options["<snapshots>"])
+        print(natsorted(options["<files>"]))
+        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in options["<files>"])
 
 if __name__ == "__main__": main()
