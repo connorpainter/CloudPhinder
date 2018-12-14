@@ -65,7 +65,7 @@ def Potential(xc,mc,hc):
     if len(xc)==1: return -2.8*mc/hc
     if len(xc) > 10000:
 #        phic = pykdgrav.Potential(xc, mc, hc, G=4.301e4, parallel=True)
-        phic = pykdgrav.Potential(xc, mc, hc, G=4.301e4, parallel=True)
+        phic = pykdgrav.Potential(xc, mc, hc, G=4.301e4, parallel=False)
     else:
 #        phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
         phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
@@ -297,7 +297,9 @@ def ComputeClouds(snapnum, options):
     criteria *= (rho*145.7 > nmin) # only look at dense gas (>nmin cm^-3)
 #    criteria *= np.max(np.abs(x),axis=1) < 50.
     print("%g particles denser than %g cm^-3" %(criteria.sum(),nmin))  #(np.sum(rho*147.7>nmin), nmin))
-    if not criteria.sum(): return
+    if not criteria.sum():
+        print 'No particles dense enough, exiting...'
+        return
     m = m[criteria]
     x = x[criteria]
     u = u[criteria]
@@ -305,6 +307,7 @@ def ComputeClouds(snapnum, options):
     rho = rho[criteria]
     ids = ids[criteria]
     zz = zz[criteria]
+    #print 'Variables restricted to dense gas'
 #    ngbdist, ngb = ngbdist[criteria]
     if fuzz: x += np.random.normal(size=x.shape)*x.std()*fuzz
 
@@ -315,13 +318,15 @@ def ComputeClouds(snapnum, options):
     else:
        # h_ags = meshoid.meshoid(x,m,des_ngb=cluster_ngb).SmoothingLength() #np.ones_like(m)*softening #(m/rho * cluster_ngb)**(1./3) #
         h_ags = np.ones_like(m)*softening
+        #print 'Neither AGS-Softening nor SmoothingLength available, using ',softening,' for softeninhg value'
     if "Potential" in keys: # and not recompute_potential:
         phi = load_from_snapshot.load_from_snapshot("Potential",ptype,snapdir,snapnum)[criteria]
     else:
+        #print 'Potetial not available in snapshot, calculating...'
         phi = Potential(x, m, h_ags)
+        #print 'Potetial calculation finished'
 
 #    phi = np.ones_like(rho)
-    
     x, m, rho, phi, h_ags, u, v, zz = np.float64(x), np.float64(m), np.float64(rho), np.float64(phi), np.float64(h_ags), np.float64(u), np.float64(v), np.float64(zz)
 
     groups, bound_groups, assigned_group = ParticleGroups(x, m, rho, phi, h_ags, u, v, zz, ids, cluster_ngb=cluster_ngb)
@@ -344,7 +349,7 @@ def ComputeClouds(snapnum, options):
 #    bound_data["SigmaEff"] = []
     
 
-    hdf5_outfilename = outputfolder + '/'+ "Clouds_%s.hdf5"%(snapnum)
+    hdf5_outfilename = outputfolder + '/'+ "Clouds_%d.hdf5"%(snapnum)
     Fout = h5py.File(hdf5_outfilename, 'w')
 
     i = 0
@@ -387,7 +392,7 @@ def ComputeClouds(snapnum, options):
     Fout.close()
     
     #now save the ascii data files
-    dat_outfilename = outputfolder + '/' +"bound_%s.dat"%(snapnum)
+    dat_outfilename = outputfolder + '/' +"bound_%d.dat"%(snapnum)
     SaveArrayDict(dat_outfilename, bound_data)
 #    SaveArrayDict(filename.split("snapshot")[0] + "unbound_%s.dat"%n, unbound_data)
 
@@ -399,9 +404,9 @@ def main():
     if nproc==1:
         for f in options["<snapshots>"]:
             print(f)
-            ComputeClouds(f, options)
+            ComputeClouds(int(f), options)
     else:
         print(natsorted(options["<snapshots>"]))
-        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in options["<snapshots>"])
+        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(int(f),options) for f in options["<snapshots>"])
 
 if __name__ == "__main__": main()
