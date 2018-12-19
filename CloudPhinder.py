@@ -37,13 +37,29 @@ from docopt import docopt
 from collections import OrderedDict
 import pykdgrav
 from pykdgrav.treewalk import GetPotential
-from pykdgrav.bruteforce import BruteForcePotential, BruteForcePotential2
+from pykdgrav.kernel import *
+#from pykdgrav.bruteforce import BruteForcePotential, BruteForcePotential2
 from os import path
 from natsort import natsorted
 import cProfile
+from numba import njit
 
-
-
+@njit
+def BruteForcePotential2(x_target,x_source, m,h=None,G=1.):
+    if h is None: h = np.zeros(x_target.shape[0])
+    potential = np.zeros(x_target.shape[0])
+    for i in range(x_target.shape[0]):
+        for j in range(x_source.shape[0]):
+            dx = x_target[i,0]-x_source[j,0]
+            dy = x_target[i,1]-x_source[j,1]
+            dz = x_target[i,2]-x_source[j,2]
+            r = np.sqrt(dx*dx + dy*dy + dz*dz)
+#            if r>0: rinv = 1/r
+            if r < h[j]:
+                potential[i] += m[j] * PotentialKernel(r, h[j])
+            else:
+                if r>0: potential[i] -= m[j]/r
+    return G*potential
 #@jit
 #def TotalEnergy(xc, mc, vc, hc, uc):
 #    phic = Potential(xc, mc, hc)
@@ -495,15 +511,15 @@ ntree = int(docopt(__doc__)["--ntree"])
 
 def main():
     options = docopt(__doc__)
-    print(options)
+#    print(options)
     nproc=int(options["--np"])
     if nproc==1:
         for f in options["<files>"]:
-            print(f)
+ #           print(f)
             ComputeClouds(f, options)
 #            cProfile.runctx("ComputeClouds('%s',options)"%f, globals(), locals(),filename=None)
     else:
-        print(natsorted(options["<files>"]))
+ #       print(natsorted(options["<files>"]))
         Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in options["<files>"])
 
 if __name__ == "__main__": main()
