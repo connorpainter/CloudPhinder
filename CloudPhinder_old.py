@@ -13,15 +13,18 @@ Options:
    --nmin=<n>                 Minimum particle number density to cut at, in cm^-3 [default: 1]
    --softening=<L>            Force softening for potential, if species does not have adaptive softening. [default: 1e-5]
    --fuzz=<L>                 Randomly perturb particle positions by this small fraction to avoid problems with particles at the same position in 32bit floating point precision data [default: 0]
+   --alpha_crit=<f>           Critical virial parameter to be considered bound [default: 2.]
    --np=<N>                   Number of snapshots to run in parallel [default: 1]
+   --ntree=<N>                Number of particles in a group above which PE will be computed via BH-tree [default: 10000]
 """
 
 
-alpha_crit = 2
+#alpha_crit = 2
 #potential_mode = False
 
 
 import h5py
+from time import time
 from numba import jit, vectorize
 from joblib import Parallel, delayed
 from scipy.spatial import cKDTree
@@ -33,64 +36,131 @@ import meshoid
 from docopt import docopt
 from collections import OrderedDict
 import pykdgrav
-from pykdgrav.bruteforce import BruteForcePotential
+from pykdgrav.treewalk import GetPotential
+from pykdgrav.kernel import *
+#from pykdgrav.bruteforce import BruteForcePotential, BruteForcePotential2
 from os import path
 from natsort import natsorted
+import cProfile
+from numba import njit
 
-@jit
-def TotalEnergy(xc, mc, vc, hc, uc):
-    phic = Potential(xc, mc, hc)
-    v_well = vc - np.average(vc, weights=mc,axis=0)
-    vSqr = np.sum(v_well**2,axis=1)
-    return np.sum(mc*(0.5*vSqr + 0.5*phic + uc))
+@njit
+def BruteForcePotential2(x_target,x_source, m,h=None,G=1.):
+    if h is None: h = np.zeros(x_target.shape[0])
+    potential = np.zeros(x_target.shape[0])
+    for i in range(x_target.shape[0]):
+        for j in range(x_source.shape[0]):
+            dx = x_target[i,0]-x_source[j,0]
+            dy = x_target[i,1]-x_source[j,1]
+            dz = x_target[i,2]-x_source[j,2]
+            r = np.sqrt(dx*dx + dy*dy + dz*dz)
+#            if r>0: rinv = 1/r
+            if r < h[j]:
+                potential[i] += m[j] * PotentialKernel(r, h[j])
+            else:
+                if r>0: potential[i] -= m[j]/r
+    return G*potential
+#@jit
+#def TotalEnergy(xc, mc, vc, hc, uc):
+#    phic = Potential(xc, mc, hc)
+#    v_well = vc - np.average(vc, weights=mc,axis=0)
+#    vSqr = np.sum(v_well**2,axis=1)
+#    return np.sum(mc*(0.5*vSqr + 0.5*phic + uc))
 
-@jit
-def PotentialEnergy(xc, mc, vc, hc, uc):
-    phic = Potential(xc, mc, hc)
+#@jit
+def PotentialEnergy(xc, mc, vc, hc, uc, tree=None, particles_not_in_tree=None, x=None, m=None, h=None):
+    if len(xc) > 1e5: return 0 # this effective sets a cutoff in particle number so we don't waste time on things that are clearly too big to be a GMC
+    if len(xc)==1: return -2.8*mc/hc**2 / 2
+    if tree:
+        phic = pykdgrav.Potential(xc, mc, hc, tree=tree, G=4.301e4)
+        if particles_not_in_tree: # have to add the potential from the stuff that's not in the tree
+            phic += BruteForcePotential2(xc, x[particles_not_in_tree], m[particles_not_in_tree], h=h[particles_not_in_tree], G=4.301e4)
+    else:
+        phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
     return np.sum(mc*0.5*phic)
 
-@jit
+#@profile
+def InteractionEnergy(x,m,h, group_a, tree_a, particles_not_in_tree_a, group_b, tree_b, particles_not_in_tree_b):
+    xb, mb, hb = x[group_b], m[group_b], h[group_b]    
+#    potential_energy = 0.
+    if tree_a:
+        phi = GetPotential(xb, tree_a, G=4.301e4,theta=.7)
+        xa, ma, ha = np.take(x, particles_not_in_tree_a,axis=0), np.take(m, particles_not_in_tree_a,axis=0), np.take(h, particles_not_in_tree_a,axis=0)
+        phi += BruteForcePotential2(xb, xa, ma, ha,G=4.301e4)
+    else:
+        xa, ma, ha = x[group_a], m[group_a], h[group_a]        
+        phi = BruteForcePotential2(xb, xa, ma, ha,G=4.301e4)
+    potential_energy = (mb*phi).sum()
+#    if tree_b:
+#        phi = GetPotential(xa, tree_b, G=4.301e4,theta=0.7)
+#        phi += BruteForcePotential2(xa, x[particles_not_in_tree_b], m[particles_not_in_tree_b], h[particles_not_in_tree_b],G=4.301e4)
+#    else:
+#        phi = BruteForcePotential2(xa, xb, mb, hb,G=4.301e4)
+#    potential_energy += (ma*phi).sum()
+#    potential_energy /= 2
+    return potential_energy
+
+
+#@jit
 def KineticEnergy(xc, mc, vc, hc, uc):
 #    phic = Potential(xc, mc, hc)
     v_well = vc - np.average(vc, weights=mc,axis=0)
     vSqr = np.sum(v_well**2,axis=1)
     return np.sum(mc*(0.5*vSqr + uc))
 
-@jit
-def Potential(xc,mc,hc):
-    if len(xc)==1: return -2.8*mc/hc
-    if len(xc) > 10000:
+#@jit
+#def Potential(xc,mc,hc, tree=None):
+#    if len(xc)==1: return -2.8*mc/hc
+#    if len(xc) > 10000:
 #        phic = pykdgrav.Potential(xc, mc, hc, G=4.301e4, parallel=True)
-        phic = pykdgrav.Potential(xc, mc, hc, G=4.301e4, parallel=True)
-    else:
+#        phic = pykdgrav.Potential(xc, mc, hc, G=4.301e4, parallel=True)
+#    else:
 #        phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
-        phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
-    return phic
+#    if tree: phic = 
+#    phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
+#    return phic
 
-@jit
-def VirialParameter(c):
+#@jit
+def KE(c, x, m, h, v, u):
     xc, mc, vc, hc = x[c], m[c], v[c], h[c]
-    phic = Potential(xc,mc, hc)
     v_well = vc - np.average(vc, weights=mc,axis=0)
     vSqr = np.sum(v_well**2,axis=1)
-    return np.abs(2*(0.5*vSqr.sum() + u[c].sum())/phic.sum())
+    return (mc*(vSqr/2 + u[c])).sum()
 
-@jit
-def EnergyIncrement(i, c, m, x, v, u, v_com):
-    phi = -4.301e4 * np.sum(m[c]/cdist([x[i],],x[c]))
+def PE(c, x, m, h, v, u):
+    phic = pykdgrav.Potential(x[c], m[c], h[c], G=4.301e4, theta=0.7)
+    return 0.5*(phic*m[c]).sum()
+    
+def VirialParameter(c, x, m, h, v, u):
+    ke, pe = KE(c,x,m,h,v,u), PE(c,x,m,h,v,u)
+    return(np.abs(ke/pe))
+#    xc, mc, vc, hc = x[c], m[c], v[c], h[c]
+ #   phic = pykdgrav.Potential(xc,mc, hc, G=4.301e4)
+ #   v_well = vc - np.average(vc, weights=mc,axis=0)
+ #   vSqr = np.sum(v_well**2,axis=1)
+ #   return np.abs(2*(0.5*vSqr.sum() + u[c].sum())/phic.sum())
+
+#@jit
+#@profile
+def EnergyIncrement(i, c, m, M, x, v, u, h, v_com, tree=None, particles_not_in_tree = None):
+    phi = 0.
+    if particles_not_in_tree:
+        xa, ma, ha = np.take(x,particles_not_in_tree,axis=0), np.take(m,particles_not_in_tree,axis=0), np.take(h,particles_not_in_tree,axis=0)
+        phi += BruteForcePotential2(np.array([x[i],]), xa, ma, h=ha, G=4.301e4)[0]
+    if tree:
+        phi += 4.301e4 * pykdgrav.PotentialWalk(x[i], 0., tree, theta=0.7)
     vSqr = np.sum((v[i]-v_com)**2)
-    M = m[c].sum()
     mu = m[i]*M/(m[i]+M)
     return 0.5*mu*vSqr + m[i]*u[i] + m[i]*phi
 
-@jit
-def KE_Increment(i, c, m, x, v, u, v_com):
+#@jit
+def KE_Increment(i,m,  v, u, v_com, mtot):
     vSqr = np.sum((v[i]-v_com)**2)
-    M = m[c].sum()
-    mu = m[i]*M/(m[i]+M)
+#    M = m[c].sum()
+    mu = m[i]*mtot/(m[i]+mtot)
     return 0.5*mu*vSqr + m[i]*u[i]
 
-@jit
+#@jit
 def PE_Increment(i, c, m, x, v, u, v_com):
     phi = -4.301e4 * np.sum(m[c]/cdist([x[i],],x[c]))
     return m[i]*phi
@@ -114,79 +184,107 @@ def SaveArrayDict(path, arrdict):
     np.savetxt(path, data, header=header,  fmt='%.15g', delimiter='\t')
 
 
-#@jit 
+#@jit
+#@profile
 def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
+#    print(u)
     phi = -rho
 #    plt.hist(np.log10(-phi)); plt.show()
     order = phi.argsort()
     phi[:] = phi[order]
     x[:], m[:], v[:], h[:], u[:], rho[:], ids[:], zz[:] = x[order], m[order], v[order], h[order], u[order], rho[order], ids[order], zz[order]
 
-    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)))
-#    print(ngbdist, ngb)
-#    sigma = np.log10(meshoid.meshoid(x,m).SurfaceDensity(size=1000.,center=[0,0,0],res=4000).T*1e4)/3
-#    sigma = np.clip(sigma,0,1)
-#    plt.pcolormesh(np.linspace(-500,500,4000),np.linspace(-500,500,4000),sigma)
-#    plt.show()
-    
+    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=0.1)#)
+
+#    print((ngbdist/h[:,np.newaxis])[ngbdist[:,-1] > 3*h])
+#    exit()
+    max_group_size = 0
     groups = {}
+    particles_since_last_tree = {}
+    group_tree = {}
     group_energy = {}
     group_KE = {}
-#    group_PE = {}
+    group_PE = {}
     COM = {}
     v_COM = {}
     masses = {}
+    positions = {}
+    softenings = {}
     bound_groups = {}
     bound_subgroups = {}
     assigned_group = -np.ones(len(x),dtype=np.int32)
-    for i in range(len(x)):
-        #if assigned_group[i] > 0: continue
-        if not i%1000: 
-            print(i)
-#            print([len(b) for b in bound_groups.values()])
-#                 len(b)
-#            for k in groups.keys():
-                # should first check if virial param is < ~ 10, otherwise we will eat up all our CPU time computing potential
-                # for the low-density contours that surround everything
-#                group_energy[k] = TotalEnergy(groups[k])
-#                if group_energy[k] < 0:
-#                    bound_groups[k] = groups[k][:]
-#        print(ngbdist)
-#        print(3*h[ngb[i]])
-        ngbi = ngb[i][(ngbdist[i] < 3*h[i]) + (ngbdist[i] < 3*h[ngb[i]])]
-#        ngbi = ngb[i]
+    for i in range(len(x)): # do it one particle at a time, in decreasing order of density
+        if not i%10000: 
+#            print(i,len(x),max_group_size)
+            max_group_size=0
+#            if masses.values(): print(max(masses.values()))
+        ngbi = ngb[i]#[(ngbdist[i] < 3*h[i]) * (ngbdist[i] < 3*h[ngb[i]])]
+        ngbi = ngbi[ngbi < len(x)] # , ngb[ngbi < len(x)]
+        
+
         lower = phi[ngbi] < phi[i]
         nlower = lower.sum()
-        if nlower == 0:
+        if nlower == 0: # if this is the densest particle in the kernel, let's create our own group with blackjack and hookers
             groups[i] = [i,]
+            group_tree[i] = None
             assigned_group[i] = i
-            group_energy[i] = m[i]*u[i] -2.8*m[i]**2/h[i]
+            group_energy[i] = m[i]*u[i]# -2.8*m[i]**2/h[i] / 2 # kinetic + potential energy
             group_KE[i] = m[i]*u[i]
-            if np.abs(group_energy[i]-group_KE[i]) and 2*group_KE[i]/np.abs(group_energy[i] - group_KE[i]) < alpha_crit: bound_groups[i] = [i,]
+#            if np.abs(group_energy[i]-group_KE[i]) and 2*group_KE[i]/np.abs(group_energy[i] - group_KE[i]) < alpha_crit: bound_groups[i] = [i,]
             v_COM[i] = v[i]
             COM[i] = x[i]
             masses[i] = m[i]
-        elif nlower == 1:
+            positions[i] = x[i]
+            softenings[i] = h[i]
+            particles_since_last_tree[i] = [i,]
+        elif nlower == 1: # if there is only one denser particle, we belong to its group
             assigned_group[i] = assigned_group[ngbi[lower][0]]
             groups[assigned_group[i]].append(i)
-        else:
+        else: # o fuck we're at a saddle point, let's consider both respective groups
             a, b = ngbi[lower][:2]
             group_index_a, group_index_b = assigned_group[a], assigned_group[b]
-            if group_index_a == group_index_b: 
+            if masses[group_index_a] < masses[group_index_b]: group_index_a, group_index_b = group_index_b, group_index_a # make sure group a is the bigger one, switching labels if needed
+
+            if group_index_a == group_index_b:  # if both dense boyes belong to the same group, that's the group for us too
                 assigned_group[i] = group_index_a
             else:
-            #OK, we're at a saddle point, so we need to consider merging the groups if energetically favourable,
-            # and if not then add the particle to the more energetically favourable group
+            #OK, we're at a saddle point, so we need to merge those groups
                 group_a, group_b = groups[group_index_a], groups[group_index_b]
+#                print(len(group_a))                
                 ma, mb = masses[group_index_a], masses[group_index_b]
-                xa, xb = COM[group_index_a], COM[group_index_b] #np.average(x[group_a],axis=0,weights=ma), np.average(x[group_b],axis=0,weights=mb)
+                xa, xb = COM[group_index_a], COM[group_index_b] 
                 va, vb = v_COM[group_index_a], v_COM[group_index_b]
-                dE = .5 * ma*mb/(ma+mb) * np.sum((va-vb)**2) - 4.3e4 * ma*mb/np.sum((xa-xb)**2)**0.5 #energy created by merging groups from relative motion and mutual binding energy
-                Ea, Eb = group_energy[group_index_a], group_energy[group_index_b]
+#                Ea, Eb = group_energy[group_index_a], group_energy[group_index_b]
                 group_ab = group_a + group_b
+#                if(len(group_a) > 1 and len(group_b)>1): print(group_energy[group_index_a] - group_KE[group_index_a],  PE(group_a, x, m, h, v, u), group_energy[group_index_b] - group_KE[group_index_b], PE(group_b,x,m,h,v,u))
                 groups[group_index_a] = group_ab
-                group_KE[group_index_a] = KineticEnergy(x[group_ab], m[group_ab], v[group_ab], h[group_ab], u[group_ab])
-                group_energy[group_index_a] = group_KE[group_index_a] + PotentialEnergy(x[group_ab], m[group_ab], v[group_ab], h[group_ab], u[group_ab]) #Ea + Eb + dE
+                
+                #group_energy[group_index_a] = group_KE[group_index_a] + group_KE[group_index_b]
+                group_energy[group_index_a] += group_energy[group_index_b]
+                group_KE[group_index_a] += group_KE[group_index_b]
+                group_energy[group_index_a] += 0.5*ma*mb/(ma+mb) * np.sum((va-vb)**2) # energy due to relative motion: 1/2 * mu * dv^2
+                group_KE[group_index_a] += 0.5*ma*mb/(ma+mb) * np.sum((va-vb)**2)
+                group_energy[group_index_a] += InteractionEnergy(x,m,h, group_a, group_tree[group_index_a], particles_since_last_tree[group_index_a], group_b, group_tree[group_index_b], particles_since_last_tree[group_index_b]) # mutual interaction energy; we've already counted their individual binding energies
+
+     #           group_energy[group_index_a] += PE(group_ab, x, m, h, v, u)
+
+                if len(group_a) > ntree: # we've got a big group, so we should probably do stuff with the tree
+                    if len(group_b) > 128: # if the smaller of the two is also large, let's build a whole new tree, and a whole new adventure
+                        
+                        group_tree[group_index_a] = pykdgrav.ConstructKDTree(np.take(x,group_ab,axis=0), np.take(m,group_ab), np.take(h,group_ab))
+                        particles_since_last_tree[group_index_a][:] = []
+                    else:  # otherwise we want to keep the old tree from group a, and just add group b to the list of particles_since_last_tree
+                        particles_since_last_tree[group_index_a] += group_b
+                else:
+                    particles_since_last_tree[group_index_a][:] = group_ab[:]
+                    
+                if len(particles_since_last_tree[group_index_a]) > ntree:
+                    group_tree[group_index_a] = pykdgrav.ConstructKDTree(np.take(x,group_ab,axis=0), np.take(m,group_ab), np.take(h,group_ab))
+                    particles_since_last_tree[group_index_a][:] = []                    
+        
+#                group_KE[group_index_a] = gKineticEnergy(np.take(x,group_ab,axis=0), np.take(m,group_ab), v[group_ab], np.take(h,group_ab), u[group_ab])
+#                group_energy[group_index_a] = KE(group_ab, x, m, h, v, u) + PE(group_ab, x, m, h, v, u)
+                #+ PotentialEnergy(np.take(x,group_ab,axis=0), np.take(m,group_ab), v[group_ab], np.take(h,group_ab), u[group_ab], group_tree[group_index_a], particles_since_last_tree[group_index_a], x, m,h) #Ea + Eb + dE
                 
                 COM[group_index_a] = (ma*xa + mb*xb)/(ma+mb)
                 v_COM[group_index_a] = (ma*va + mb*vb)/(ma+mb)
@@ -195,21 +293,33 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
                 assigned_group[i] = group_index_a
                 assigned_group[assigned_group==group_index_b] = group_index_a
                 # if this new group is bound, we can delete the old bound group
-                if 2*group_KE[group_index_a]/np.abs(group_energy[group_index_a] - group_KE[group_index_a]) < alpha_crit:
+                if abs(2*group_KE[group_index_a]/np.abs(group_energy[group_index_a] - group_KE[group_index_a]) - alpha_crit) < 0.1:
+#                    print(masses[group_index_a], VirialParameter(group_ab, x, m, h, v, u))
                     bound_groups[group_index_a] = group_ab[:]
                     bound_groups.pop(group_index_b,None)
+                    #-group_KE[group_index_a]
+##                    print(len(group_ab), group_KE[group_index_a], KE(group_ab, x, m, h, v, u), group_energy[group_index_a]-group_KE[group_index_a], PE(group_ab, x, m, h, v, u))         
+                for d in groups, particles_since_last_tree, group_tree, group_energy, group_KE, COM, v_COM, masses, bound_groups, bound_subgroups:
+                    d.pop(group_index_b, None)
                 
             groups[group_index_a].append(i)
-
-        if nlower > 0:
+            max_group_size = max(max_group_size, len(particles_since_last_tree[group_index_a]))
+        if nlower > 0: # assuming we've added a particle to an existing group, we have to update stuff
             g = assigned_group[i]
             mgroup = masses[g]
-            group_KE[g] += KE_Increment(i, groups[g][:-1], m, x, v, u, v_COM[g])
-            group_energy[g] += EnergyIncrement(i, groups[g][:-1], m, x, v, u, v_COM[g])
-            if 2*group_KE[g]/np.abs(group_energy[g] - group_KE[g]) < alpha_crit:
+            group_KE[g] += KE_Increment(i, m, v, u, v_COM[g], mgroup)
+            group_energy[g] += EnergyIncrement(i, groups[g][:-1], m, mgroup, x, v, u, h, v_COM[g], group_tree[g], particles_since_last_tree[g])
+            if abs(2*group_KE[g]/np.abs(group_energy[g] - group_KE[g]) - alpha_crit) < 0.1:
                 bound_groups[g] = groups[g][:]
             v_COM[g] = (m[i]*v[i] + mgroup*v_COM[g])/(m[i]+mgroup)
             masses[g] += m[i]
+            particles_since_last_tree[g].append(i)
+            if len(particles_since_last_tree[g]) > ntree:
+                group_tree[g] = pykdgrav.ConstructKDTree(x[groups[g]], m[groups[g]], h[groups[g]])
+                particles_since_last_tree[g][:] = []
+            max_group_size = max(max_group_size, len(particles_since_last_tree[g]))
+#            print(group_KE[g], KE(groups[g], x, m, h, v, u), group_energy[g]-group_KE[g], PE(groups[g], x, m, h, v, u))
+
         
 #    print("initial grouping complete")
     # OK, now make a pass through the bound groups to absorb any subgroups within a larger group 
@@ -238,7 +348,8 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
 def ComputeClouds(filename, options):
     n = filename.split("_")[1].split(".")[0]
     nmin = float(options["--nmin"])
-    if path.isfile("bound_%s_%g.dat"%(n,nmin)): return
+    datafile_name = "bound_%s_n%g_alpha%g.dat"%(n,nmin,alpha_crit)
+#    if path.isfile(datafile_name): return
     print(filename)
     cluster_ngb = int(float(options["--cluster_ngb"]) + 0.5)
     G = float(options["--G"])
@@ -277,7 +388,7 @@ def ComputeClouds(filename, options):
         rho = np.array(F[ptype]["Density"])
     else:
         rho = meshoid.meshoid(x,m,des_ngb=cluster_ngb).Density()
-    print(rho)
+#    print(rho)
         #ngbdist = meshoid.meshoid(x,m,des_ngb=cluster_ngb).ngbdist
     zz = np.array(F[ptype]["Metallicity"])
 #    rho = meshoid.meshoid(x,m).KernelAverage(rho)
@@ -309,13 +420,16 @@ def ComputeClouds(filename, options):
     if "Potential" in F[ptype].keys(): # and not recompute_potential:
         phi = np.array(F[ptype]["Potential"])[criteria]
     else:
-        phi = Potential(x, m, h_ags)
+        phi = pykdgrav.Potential(x, m, h_ags)
 
 #    phi = np.ones_like(rho)
     
     x, m, rho, phi, h_ags, u, v, zz = np.float64(x), np.float64(m), np.float64(rho), np.float64(phi), np.float64(h_ags), np.float64(u), np.float64(v), np.float64(zz)
 
+    t = time()
     groups, bound_groups, assigned_group = ParticleGroups(x, m, rho, phi, h_ags, u, v, zz, ids, cluster_ngb=cluster_ngb)
+    t = time() - t
+    print("Time: %g"%t)
     print("Done grouping. Computing group properties...")
     groupmass = np.array([m[c].sum() for c in bound_groups.values() if len(c)>10])
     groupid = np.array([c for c in bound_groups.keys() if len(bound_groups[c])>10])
@@ -388,20 +502,24 @@ def ComputeClouds(filename, options):
     F.close()
     
     #now save the ascii data files
-    SaveArrayDict("bound_%s_%g.dat"%(n,nmin), bound_data)
+    SaveArrayDict(datafile_name, bound_data)
 #    SaveArrayDict(filename.split("snapshot")[0] + "unbound_%s.dat"%n, unbound_data)
 
     
-    
+alpha_crit = float(docopt(__doc__)["--alpha_crit"])
+ntree = int(docopt(__doc__)["--ntree"])
+
 def main():
     options = docopt(__doc__)
+#    print(options)
     nproc=int(options["--np"])
     if nproc==1:
         for f in options["<files>"]:
-            print(f)
+ #           print(f)
             ComputeClouds(f, options)
+#            cProfile.runctx("ComputeClouds('%s',options)"%f, globals(), locals(),filename=None)
     else:
-        print(natsorted(options["<files>"]))
+ #       print(natsorted(options["<files>"]))
         Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in options["<files>"])
 
 if __name__ == "__main__": main()
