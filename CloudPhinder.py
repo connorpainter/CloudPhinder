@@ -517,7 +517,7 @@ def main():
     options = docopt(__doc__)
 #    print(options)
     nproc=int(options["--np"])
-    snapnum_list = np.array([int(c) for c in options["<snapshots>"].split(',')])
+    snapnum_list = np.array([int(c) for c in options["<snapshots>"][0].split(',')])
     if nproc==1:
         for f in snapnum_list:
             print(f)
