@@ -517,13 +517,13 @@ def main():
     options = docopt(__doc__)
 #    print(options)
     nproc=int(options["--np"])
-    snapnum_list = np.array([int(c) for c in options["--snapshots"].split(',')])
+    snapnum_list = np.array([int(c) for c in options["<snapshots>"].split(',')])
     if nproc==1:
         for f in snapnum_list:
             print(f)
             ComputeClouds(f, options)
     else:
-        print(natsorted(options["<snapshots>"]))
+        print(natsorted(snapnum_list))
         Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in snapnum_list)
 
 if __name__ == "__main__": main()
