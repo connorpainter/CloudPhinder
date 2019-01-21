@@ -328,34 +328,14 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
                 particles_since_last_tree[g][:] = []
             max_group_size = max(max_group_size, len(particles_since_last_tree[g]))
 
-#            print("alpha in group increment: ", 2*group_KE[g]/np.abs(group_energy[g] - group_KE[g]), len(groups[g]), group_KE[g], group_energy[g]-group_KE[g])
-#            print(group_KE[g], KE(groups[g], x, m, h, v, u), group_energy[g]-group_KE[g], PE(groups[g], x, m, h, v, u))
-
-        
-#    print("initial grouping complete")
-    # OK, now make a pass through the bound groups to absorb any subgroups within a larger group 
-#     assigned_bound_group = -np.ones(len(x),dtype=np.int32)
-#     largest_assigned_group = -np.ones(len(x),dtype=np.int32)
-    
-#     for k, g in bound_groups.items():
-#         for i in g:
-#             if len(g) > largest_assigned_group[i]: 
-#                 assigned_bound_group[i] = k
-#                 largest_assigned_group[i] = len(g)
-# #    print("secondary grouping complete")
-#     bound_groups = {}
-#    print(assigned_bound_group[:100])
-#    print(len(np.unique(assigned_bound_group[assigned_bound_group >= 0])), " unique groups found")
+    # Now assign particles to their respective bound groups
     for i in range(len(assigned_bound_group)):
-#        if not i%1000: print(i, len(bound_groups.keys()))
         a = assigned_bound_group[i]
         if a < 0: continue
 
         if a in bound_groups.keys(): bound_groups[a].append(i)
         else: bound_groups[a] = [i,]
-    for k, g in bound_groups.items():
-        if len(g) > 10: print(len(g), len(np.unique(g)))
-#    print("tertiary grouping complete")
+
     return groups, bound_groups, assigned_group
 
     
@@ -481,12 +461,12 @@ def ComputeClouds(filepath , options):
         h_ags = np.ones_like(m)*softening
         #print 'Neither AGS-Softening nor SmoothingLength available, using ',softening,' for softeninhg value'
     if "Potential" in keys: # potential doesn't get used anymore, so this is moot
-        phi = load_from_snapshot.load_from_snapshot("Potential",ptype,snapdir,snapnum, particle_mask=criteria)[criteria]
+        phi = load_from_snapshot.load_from_snapshot("Potential",ptype,snapdir,snapnum, particle_mask=criteria)
     else:
-        print('Potential not available in snapshot, calculating...')
-        #        phi = np.zeros_like(m)
-        phi = pykdgrav.Potential(x, m, h_ags)
-        print('Potential calculation finished')
+ #       print('Potential not available in snapshot, calculating...')
+        phi = np.zeros_like(m)
+        #phi = pykdgrav.Potential(x, m, h_ags)
+#        print('Potential calculation finished')
     
 #    phi = np.ones_like(rho)
     x, m, rho, phi, h_ags, u, v, zz = np.float64(x), np.float64(m), np.float64(rho), np.float64(phi), np.float64(h_ags), np.float64(u), np.float64(v), np.float64(zz)
