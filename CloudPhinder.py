@@ -6,7 +6,7 @@ Usage: CloudPhinder.py <snapshots> ... [options]
 
 Options:                                                                       
    -h --help                  Show this screen.
-   --snapdir=<name>           path to the snapshot folder, e.g. /work/simulations/outputs
+
    --outputfolder=<name>      Specifies the folder to save the outputs to, [default: output]
    --ptype=<N>                GIZMO particle type to analyze [default: 0]
    --G=<G>                    Gravitational constant to use; should be consistent with what was used in the simulation. [default: 4.301e4]
@@ -20,7 +20,7 @@ Options:
    --ntree=<N>                Number of particles in a group above which PE will be computed via BH-tree [default: 10000]
    --overwrite                Whether to overwrite pre-existing clouds files
 """
-
+#   --snapdir=<name>           path to the snapshot folder, e.g. /work/simulations/outputs
 
 #alpha_crit = 2
 #potential_mode = False
@@ -133,12 +133,14 @@ def KE(c, x, m, h, v, u):
     return (mc*(vSqr/2 + u[c])).sum()
 
 def PE(c, x, m, h, v, u):
+#    print(x[c], m[c], h[c])
     phic = pykdgrav.Potential(x[c], m[c], h[c], G=4.301e4, theta=0.7)
+#    print("Done!")
     return 0.5*(phic*m[c]).sum()
     
 def VirialParameter(c, x, m, h, v, u):
     ke, pe = KE(c,x,m,h,v,u), PE(c,x,m,h,v,u)
-    return(np.abs(ke/pe))
+    return(np.abs(2*ke/pe))
 #    xc, mc, vc, hc = x[c], m[c], v[c], h[c]
  #   phic = pykdgrav.Potential(xc,mc, hc, G=4.301e4)
  #   v_well = vc - np.average(vc, weights=mc,axis=0)
@@ -199,7 +201,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
     phi[:] = phi[order]
     x[:], m[:], v[:], h[:], u[:], rho[:], ids[:], zz[:] = x[order], m[order], v[order], h[order], u[order], rho[order], ids[order], zz[order]
 
-    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=1.)#)
+    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=np.max((3*m/(4*np.pi*rho))**(1./3)))#)
 
 #    print((ngbdist/h[:,np.newaxis])[ngbdist[:,-1] > 3*h])
 #    exit()
@@ -288,10 +290,6 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
                 if len(particles_since_last_tree[group_index_a]) > ntree:
                     group_tree[group_index_a] = pykdgrav.ConstructKDTree(np.take(x,group_ab,axis=0), np.take(m,group_ab), np.take(h,group_ab))
                     particles_since_last_tree[group_index_a][:] = []                    
-        
-#                group_KE[group_index_a] = gKineticEnergy(np.take(x,group_ab,axis=0), np.take(m,group_ab), v[group_ab], np.take(h,group_ab), u[group_ab])
-#                group_energy[group_index_a] = KE(group_ab, x, m, h, v, u) + PE(group_ab, x, m, h, v, u)
-                #+ PotentialEnergy(np.take(x,group_ab,axis=0), np.take(m,group_ab), v[group_ab], np.take(h,group_ab), u[group_ab], group_tree[group_index_a], particles_since_last_tree[group_index_a], x, m,h) #Ea + Eb + dE
                 
                 COM[group_index_a] = (ma*xa + mb*xb)/(ma+mb)
                 v_COM[group_index_a] = (ma*va + mb*vb)/(ma+mb)
@@ -300,14 +298,11 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
                 assigned_group[i] = group_index_a
                 assigned_group[assigned_group==group_index_b] = group_index_a
                 # if this new group is bound, we can delete the old bound group
-#                print("alpha in group merger:", 2*group_KE[group_index_a]/np.abs(group_energy[group_index_a] - group_KE[group_index_a]), len(group_ab))
                 if abs(2*group_KE[group_index_a]/np.abs(group_energy[group_index_a] - group_KE[group_index_a])) < 1.1*alpha_crit:
                     # old way of doing it: manage list of bound groups
-#                    bound_groups[group_index_a] = group_ab[:]
- #                   bound_groups.pop(group_index_b,None)
-                    # new way: just keep a running record of the largest bound group each member particle has every belonged to
+                    # new way: just keep a running record of the largest bound group each member particle has ever belonged to
                     largest_assigned_group[group_ab] = len(group_ab)
-                    assigned_bound_group[group_ab] = group_ab
+                    assigned_bound_group[group_ab] = group_index_a
                     
                     #-group_KE[group_index_a]
 ##                    print(len(group_ab), group_KE[group_index_a], KE(group_ab, x, m, h, v, u), group_energy[group_index_a]-group_KE[group_index_a], PE(group_ab, x, m, h, v, u))         
@@ -322,7 +317,9 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
             group_KE[g] += KE_Increment(i, m, v, u, v_COM[g], mgroup)
             group_energy[g] += EnergyIncrement(i, groups[g][:-1], m, mgroup, x, v, u, h, v_COM[g], group_tree[g], particles_since_last_tree[g])
             if abs(2*group_KE[g]/np.abs(group_energy[g] - group_KE[g])) < 1.1*alpha_crit:
-                bound_groups[g] = groups[g][:]
+                largest_assigned_group[i] = len(groups[g]) + 1
+                assigned_bound_group[i] = g
+#                bound_groups[g] = groups[g][:]
             v_COM[g] = (m[i]*v[i] + mgroup*v_COM[g])/(m[i]+mgroup)
             masses[g] += m[i]
             particles_since_last_tree[g].append(i)
@@ -347,7 +344,8 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
 #                 largest_assigned_group[i] = len(g)
 # #    print("secondary grouping complete")
 #     bound_groups = {}
-
+#    print(assigned_bound_group[:100])
+#    print(len(np.unique(assigned_bound_group[assigned_bound_group >= 0])), " unique groups found")
     for i in range(len(assigned_bound_group)):
 #        if not i%1000: print(i, len(bound_groups.keys()))
         a = assigned_bound_group[i]
@@ -355,6 +353,8 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
 
         if a in bound_groups.keys(): bound_groups[a].append(i)
         else: bound_groups[a] = [i,]
+    for k, g in bound_groups.items():
+        if len(g) > 10: print(len(g), len(np.unique(g)))
 #    print("tertiary grouping complete")
     return groups, bound_groups, assigned_group
 
@@ -367,8 +367,19 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
 #    if overwrite and path.isfile(datafile_name): return
 #    print(filename)
 #=======
-def ComputeClouds(snapnum, options):
-    snapdir = options["--snapdir"]
+#def ComputeClouds(snapnum, options):
+
+def ComputeClouds(filepath , options):
+    if ".hdf5" in filepath: # we have a lone snapshot, no snapdir
+        snapnum = int(filepath.split("_")[-1].split(".hdf5")[0].split(".")[0].replace("/",""))
+        snapname = filepath.split("_")[-2].split("/")[-1]
+    else: # filepath refers to the directory in which the snapshot's multiple files are stored
+        snapnum = int(filepath.split("snapdir_")[-1].replace("/",""))
+        snapname = "snapshot" #filepath.split("_")[-2].split("/")[-1]
+#    print(snapname)
+    snapdir = "/".join(filepath.split("/")[:-1])
+    print(snapnum, snapname, snapdir)
+#    snapdir = options["--snapdir"]
     if not snapdir:
         snapdir = getcwd()
         print 'Snapshot directory not specified, using local directory of ', snapdir
@@ -376,8 +387,10 @@ def ComputeClouds(snapnum, options):
     if not path.isdir(outputfolder):
         mkdir(outputfolder)
 
+#    print(snapdir, snapnum)
     #Check if there is a snapshot like that
-    fname_found, _, _ =load_from_snapshot.check_if_filename_exists(snapdir,snapnum)
+
+    fname_found, _, _ =load_from_snapshot.check_if_filename_exists(snapdir,snapnum, snapshot_name=snapname)
     if fname_found!='NULL':    
         print 'Snapshot ', snapnum, ' found in ', snapdir
     else:
@@ -400,75 +413,89 @@ def ComputeClouds(snapnum, options):
 
 
     #Read gas properties
-    m = load_from_snapshot.load_from_snapshot("Masses",ptype,snapdir,snapnum)
-    criteria = np.ones(len(m),dtype=np.bool)
+    keys = load_from_snapshot.load_from_snapshot("keys",ptype,snapdir,snapnum)
+#    criteria = np.ones(len(m),dtype=np.bool)
+    if "Density" in keys:
+        rho = load_from_snapshot.load_from_snapshot("Density",ptype,snapdir,snapnum)
+        criteria = np.arange(len(rho))[(rho*404 > nmin)] # only look at dense gas (>nmin cm^-3)
+        print("%g particles denser than %g cm^-3" %(criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
+        if not criteria.sum():
+            print 'No particles dense enough, exiting...'
+            return        
+        m = load_from_snapshot.load_from_snapshot("Masses",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria)
+        x = load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria)
+    else:
+        m = load_from_snapshot.load_from_snapshot("Masses",ptype,snapdir,snapnum, snapshot_name=snapname)
+        x = load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname)
+        rho = meshoid.meshoid(x,m,des_ngb=cluster_ngb).Density()
+        criteria = np.arange(len(rho))[(rho*404 > nmin)] # only look at dense gas (>nmin cm^-3)
+        print("%g particles denser than %g cm^-3" %(criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
+        if not criteria.sum():
+            print 'No particles dense enough, exiting...'
+            return
+        m = np.take(m, criteria, axis=0)
+        x = np.take(x, criteria, axis=0)
+#        print(x, load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria))
+        rho = np.take(rho, criteria, axis=0)
 
     if len(m) < cluster_ngb:
         print("Not enough particles for meaningful cluster analysis!")
         return
 
-    x = load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum)
+    ids = load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
+    u = (load_from_snapshot.load_from_snapshot("InternalEnergy",ptype,snapdir,snapnum, particle_mask=criteria) if ptype==0 else np.zeros_like(m))
 
-    ids = load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum)
-    u = (load_from_snapshot.load_from_snapshot("InternalEnergy",ptype,snapdir,snapnum) if ptype==0 else np.zeros_like(m))
-    keys = load_from_snapshot.load_from_snapshot("keys",ptype,snapdir,snapnum)
-    if "Density" in keys:
-        rho = load_from_snapshot.load_from_snapshot("Density",ptype,snapdir,snapnum)
+    if "Metallicity" in keys:
+        zz = load_from_snapshot.load_from_snapshot("Metallicity",ptype,snapdir,snapnum, particle_mask=criteria)
     else:
-        rho = meshoid.meshoid(x,m,des_ngb=cluster_ngb).Density()
-#    print(rho)
-        #ngbdist = meshoid.meshoid(x,m,des_ngb=cluster_ngb).ngbdist
-#<<<<<<< HEAD
-#    if "Metallicity" in F[ptype].keys():
-#        zz = np.array(F[ptype]["Metallicity"])
-#    else:
-#        zz = np.zeros_like(m)
-#=======
-    zz = load_from_snapshot.load_from_snapshot("Metallicity",ptype,snapdir,snapnum)
+        zz = np.zeros_like(m)
 #>>>>>>> c2d167271edc8886754004f38d451cc07768a500
 #    rho = meshoid.meshoid(x,m).KernelAverage(rho)
 #    c = np.average(x,axis=0,weights=rho**2)
 #    x = x - c
 #    print(rho.max()) 
  
-    criteria *= (rho*404 > nmin) # only look at dense gas (>nmin cm^-3)
+
 #    criteria *= u < 30. # temp < ~3000K
 #    criteria *= np.max(np.abs(x),axis=1) < 50.
-    print("%g particles denser than %g cm^-3" %(criteria.sum(),nmin))  #(np.sum(rho*147.7>nmin), nmin))
-    if not criteria.sum():
-        print 'No particles dense enough, exiting...'
-        return
-    m = m[criteria]
-    x = x[criteria]
-    u = u[criteria]
-    v = load_from_snapshot.load_from_snapshot("Velocities",ptype,snapdir,snapnum)[criteria]
-    rho = rho[criteria]
-    ids = ids[criteria]
-    zz = zz[criteria]
+
+#    m = m[criteria]
+#    x = x[criteria]
+#    u = u[criteria]
+    v = load_from_snapshot.load_from_snapshot("Velocities",ptype,snapdir,snapnum, particle_mask=criteria)
+#    rho = rho[criteria]
+#    ids = ids[criteria]
+#    zz = zz[criteria]
     #print 'Variables restricted to dense gas'
 #    ngbdist, ngb = ngbdist[criteria]
-    if fuzz: x += np.random.normal(size=x.shape)*x.std()*fuzz
+#    if fuzz: #
+
+    #  various pathological things can happen if two particles share a position (not that uncommon with single precision), so we perturb the positions just a bit until we're good
 
     if "AGS-Softening" in keys:
-        h_ags = load_from_snapshot.load_from_snapshot("AGS-Softening",ptype,snapdir,snapnum)[criteria]
+        h_ags = load_from_snapshot.load_from_snapshot("AGS-Softening",ptype,snapdir,snapnum, particle_mask=criteria)
     elif "SmoothingLength" in keys:
-        h_ags = load_from_snapshot.load_from_snapshot("SmoothingLength",ptype,snapdir,snapnum)[criteria]
+        h_ags = load_from_snapshot.load_from_snapshot("SmoothingLength",ptype,snapdir,snapnum, particle_mask=criteria)
     else:
        # h_ags = meshoid.meshoid(x,m,des_ngb=cluster_ngb).SmoothingLength() #np.ones_like(m)*softening #(m/rho * cluster_ngb)**(1./3) #
         h_ags = np.ones_like(m)*softening
         #print 'Neither AGS-Softening nor SmoothingLength available, using ',softening,' for softeninhg value'
-    if "Potential" in keys: # and not recompute_potential:
-        phi = load_from_snapshot.load_from_snapshot("Potential",ptype,snapdir,snapnum)[criteria]
+    if "Potential" in keys: # potential doesn't get used anymore, so this is moot
+        phi = load_from_snapshot.load_from_snapshot("Potential",ptype,snapdir,snapnum, particle_mask=criteria)[criteria]
     else:
-        #print 'Potetial not available in snapshot, calculating...'
+        print('Potential not available in snapshot, calculating...')
+        #        phi = np.zeros_like(m)
         phi = pykdgrav.Potential(x, m, h_ags)
-        #print 'Potetial calculation finished'
-
+        print('Potential calculation finished')
+    
 #    phi = np.ones_like(rho)
     x, m, rho, phi, h_ags, u, v, zz = np.float64(x), np.float64(m), np.float64(rho), np.float64(phi), np.float64(h_ags), np.float64(u), np.float64(v), np.float64(zz)
+    while len(np.unique(x,axis=0)) < len(x):
+        x *= 1+ np.random.normal(size=x.shape) * 1e-8
 
     t = time()
     groups, bound_groups, assigned_group = ParticleGroups(x, m, rho, phi, h_ags, u, v, zz, ids, cluster_ngb=cluster_ngb)
+    print(len(np.unique(x,axis=0)), len(x))
     t = time() - t
     print("Time: %g"%t)
     print("Done grouping. Computing group properties...")
@@ -487,6 +514,7 @@ def ComputeClouds(snapnum, options):
     bound_data["Reff"] = []
     bound_data["HalfMassRadius"] = []
     bound_data["NumParticles"] = []
+    bound_data["VirialParameter"] = []
 #    bound_data["SigmaEff"] = []
     
 
@@ -507,6 +535,7 @@ def ComputeClouds(snapnum, options):
         alldata.append(load_from_snapshot.load_from_snapshot(k,ptype,snapdir,snapnum))
     print '\t Reading done, iterating over clouds...'
     for k,c in bound_groups.items():
+        print(len(c), len(np.unique(c)))
         bound_data["Mass"].append(m[c].sum())
         bound_data["NumParticles"].append(len(c))
         bound_data["Center"].append(np.average(x[c], weights=m[c], axis=0))
@@ -519,6 +548,8 @@ def ComputeClouds(snapnum, options):
 #        sigma_eff = meshoid.meshoid(x[c],m[c],h_ags[c]).SurfaceDensity(size=4*bound_data["HalfMassRadius"][-1],center=bound_data["Center"][-1], res=400)
         
 #        bound_data["SigmaEff"].append(np.average(sigma_eff,weights=sigma_eff)*1e4)
+#        print(len(c))
+        bound_data["VirialParameter"].append(VirialParameter(c, x, m, h_ags, v, u))
 
         cluster_id = "Cloud"+ ("%d"%i).zfill(int(np.log10(len(bound_groups))+1))
 
@@ -552,13 +583,17 @@ def main():
     options = docopt(__doc__)
 #    print(options)
     nproc=int(options["--np"])
-    snapnum_list = np.array([int(c) for c in options["<snapshots>"][0].split(',')])
+#    snapnum_list = np.array([int(c) for c in options["<snapshots>"][0].split(',')])
+
+    snappaths = [p  for p in options["<snapshots>"]] 
+
     if nproc==1:
-        for f in snapnum_list:
+        for f in snappaths:
             print(f)
             ComputeClouds(f, options)
+#            cProfile.runctx("ComputeClouds(f, options)", {'ComputeClouds': ComputeClouds, 'f': f, 'options': options}, {})
     else:
-        print(natsorted(snapnum_list))
-        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in snapnum_list)
+#        print(natsorted(snapnum_list))
+        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in snappaths)
 
 if __name__ == "__main__": main()
