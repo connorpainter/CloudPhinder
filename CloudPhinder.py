@@ -148,6 +148,7 @@ def VirialParameter(c, x, m, h, v, u):
  #   return np.abs(2*(0.5*vSqr.sum() + u[c].sum())/phic.sum())
 
 #@jit
+
 #@profile
 def EnergyIncrement(i, c, m, M, x, v, u, h, v_com, tree=None, particles_not_in_tree = None):
     phi = 0.
@@ -362,10 +363,11 @@ def ComputeClouds(filepath , options):
     else: # filepath refers to the directory in which the snapshot's multiple files are stored
         snapnum = int(filepath.split("snapdir_")[-1].replace("/",""))
         snapname = "snapshot" #filepath.split("_")[-2].split("/")[-1]
-        snapdir = filepath.split("/")[-1]
+        snapdir = filepath.split("snapdir")[0] + "snapdir" + filepath.split("snapdir")[1]
+        print(snapnum, snapname, snapdir, outputfolder)
         if outputfolder == "None": outputfolder = getcwd() + filepath.split(snapdir)[0]
 
-    print(snapnum, snapname, snapdir, outputfolder)
+
 #    snapdir = options["--snapdir"]
     if not snapdir:
         snapdir = getcwd()
@@ -403,6 +405,7 @@ def ComputeClouds(filepath , options):
 
 #    criteria = np.ones(len(m),dtype=np.bool)
     if keys is 0: return
+    print("keys found")
     if "Density" in keys:
         rho = load_from_snapshot.load_from_snapshot("Density",ptype,snapdir,snapnum)
         if len(rho) < cluster_ngb:
@@ -411,7 +414,7 @@ def ComputeClouds(filepath , options):
         if len(rho) < cluster_ngb: return
         criteria = np.arange(len(rho))[(rho*404 > nmin)] # only look at dense gas (>nmin cm^-3)
         print("%g particles denser than %g cm^-3" %(criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
-        if not criteria.sum():
+        if not criteria.size:
             print 'No particles dense enough, exiting...'
             return        
         m = load_from_snapshot.load_from_snapshot("Masses",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria)
@@ -422,17 +425,19 @@ def ComputeClouds(filepath , options):
             print("Not enough particles for meaningful cluster analysis!")
             return
         x = load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname)
+#        print("Computing density...")
         rho = meshoid.meshoid(x,m,des_ngb=cluster_ngb).Density()
+#        print("Density done!")
         criteria = np.arange(len(rho))[(rho*404 > nmin)] # only look at dense gas (>nmin cm^-3)
         print("%g particles denser than %g cm^-3" %(criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
-        if not criteria.sum():
+        if not criteria.size:
             print 'No particles dense enough, exiting...'
             return
         m = np.take(m, criteria, axis=0)
         x = np.take(x, criteria, axis=0)
 #        print(x, load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria))
     rho = np.take(rho, criteria, axis=0)
-
+    print("Density obtained")
 
 
     ids = load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
@@ -574,7 +579,7 @@ def main():
 #    snapnum_list = np.array([int(c) for c in options["<snapshots>"][0].split(',')])
 
     snappaths = [p  for p in options["<snapshots>"]] 
-
+#    snappaths = "snadir_600",
     if nproc==1:
         for f in snappaths:
             print(f)
