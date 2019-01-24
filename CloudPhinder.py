@@ -28,6 +28,7 @@ Options:
 import load_from_snapshot #routine to load snapshots from GIZMo files
 import h5py
 from time import time
+from time import sleep
 from numba import jit, vectorize
 from joblib import Parallel, delayed
 from scipy.spatial import cKDTree
@@ -582,6 +583,7 @@ def main():
 #    snappaths = "snadir_600",
     if nproc==1:
         for f in snappaths:
+            sleep(np.random.rand())
             print(f)
             ComputeClouds(f, options)
 #            cProfile.runctx("ComputeClouds(f, options)", {'ComputeClouds': ComputeClouds, 'f': f, 'options': options}, {})
