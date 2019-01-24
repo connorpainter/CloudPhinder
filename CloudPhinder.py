@@ -37,6 +37,7 @@ import numpy as np
 from sys import argv
 import meshoid
 from docopt import docopt
+from multiprocessing import Pool
 from collections import OrderedDict
 import pykdgrav
 from pykdgrav.treewalk import GetPotential
@@ -371,7 +372,7 @@ def ComputeClouds(filepath , options):
 #    snapdir = options["--snapdir"]
     if not snapdir:
         snapdir = getcwd()
-        print 'Snapshot directory not specified, using local directory of ', snapdir
+        print('Snapshot directory not specified, using local directory of ', snapdir)
 
 
 
@@ -380,9 +381,9 @@ def ComputeClouds(filepath , options):
 
     fname_found, _, _ =load_from_snapshot.check_if_filename_exists(snapdir,snapnum, snapshot_name=snapname)
     if fname_found!='NULL':    
-        print 'Snapshot ', snapnum, ' found in ', snapdir
+        print('Snapshot ', snapnum, ' found in ', snapdir)
     else:
-        print 'Snapshot ', snapnum, ' NOT found in ', snapdir, '\n Skipping it...'
+        print('Snapshot ', snapnum, ' NOT found in ', snapdir, '\n Skipping it...')
         return
 #>>>>>>> c2d167271edc8886754004f38d451cc07768a500
     cluster_ngb = int(float(options["--cluster_ngb"]) + 0.5)
@@ -399,13 +400,16 @@ def ComputeClouds(filepath , options):
         boxsize = None
     fuzz = float(options["--fuzz"])
 
-
+    npart = load_from_snapshot.load_from_snapshot("NumPart_Total", "Header", snapdir, snapnum)[ptype]
+    if npart < cluster_ngb:
+        print("Not enough particles for meaningful cluster analysis!")
+        return        
     #Read gas properties
     keys = load_from_snapshot.load_from_snapshot("keys",ptype,snapdir,snapnum)
-
+    print(keys)
 #    criteria = np.ones(len(m),dtype=np.bool)
     if keys is 0: return
-    print("keys found")
+#    print("keys found")
     if "Density" in keys:
         rho = load_from_snapshot.load_from_snapshot("Density",ptype,snapdir,snapnum)
         if len(rho) < cluster_ngb:
@@ -415,7 +419,7 @@ def ComputeClouds(filepath , options):
         criteria = np.arange(len(rho))[(rho*404 > nmin)] # only look at dense gas (>nmin cm^-3)
         print("%g particles denser than %g cm^-3" %(criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
         if not criteria.size:
-            print 'No particles dense enough, exiting...'
+            print('No particles dense enough, exiting...')
             return        
         m = load_from_snapshot.load_from_snapshot("Masses",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria)
         x = load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria)
@@ -431,7 +435,7 @@ def ComputeClouds(filepath , options):
         criteria = np.arange(len(rho))[(rho*404 > nmin)] # only look at dense gas (>nmin cm^-3)
         print("%g particles denser than %g cm^-3" %(criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
         if not criteria.size:
-            print 'No particles dense enough, exiting...'
+            print('No particles dense enough, exiting...')
             return
         m = np.take(m, criteria, axis=0)
         x = np.take(x, criteria, axis=0)
@@ -572,6 +576,10 @@ alpha_crit = float(docopt(__doc__)["--alpha_crit"])
 overwrite =  docopt(__doc__)["--overwrite"]
 ntree = int(docopt(__doc__)["--ntree"])
 
+def func(path):
+    """Necessary for the multiprocessing pickling to work"""
+    return ComputeClouds(path, docopt(__doc__))
+
 def main():
     options = docopt(__doc__)
 #    print(options)
@@ -579,14 +587,14 @@ def main():
 #    snapnum_list = np.array([int(c) for c in options["<snapshots>"][0].split(',')])
 
     snappaths = [p  for p in options["<snapshots>"]] 
-#    snappaths = "snadir_600",
+#    snappaths = "snapdir_600",
     if nproc==1:
         for f in snappaths:
             print(f)
             ComputeClouds(f, options)
 #            cProfile.runctx("ComputeClouds(f, options)", {'ComputeClouds': ComputeClouds, 'f': f, 'options': options}, {})
     else:
-#        print(natsorted(snapnum_list))
-        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in snappaths)
+        Pool(nproc).map(func, snappaths)
+#        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in snappaths)
 
 if __name__ == "__main__": main()
