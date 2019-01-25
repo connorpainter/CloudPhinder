@@ -406,9 +406,11 @@ def ComputeClouds(filepath , options):
         print("Not enough particles for meaningful cluster analysis!")
         return        
     #Read gas properties
+
     keys = load_from_snapshot.load_from_snapshot("keys",ptype,snapdir,snapnum)
     print(keys)
 #    criteria = np.ones(len(m),dtype=np.bool)
+    print(list(keys))
     if keys is 0: return
 #    print("keys found")
     if "Density" in keys:
@@ -421,7 +423,7 @@ def ComputeClouds(filepath , options):
         print("%g particles denser than %g cm^-3" %(criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
         if not criteria.size:
             print('No particles dense enough, exiting...')
-            return        
+            return
         m = load_from_snapshot.load_from_snapshot("Masses",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria)
         x = load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria)
     else:
@@ -521,6 +523,7 @@ def ComputeClouds(filepath , options):
 #    bound_data["SigmaEff"] = []
     
     hdf5_outfilename = outputfolder + '/'+ "Clouds_%d_n%g_alpha%g.hdf5"%(snapnum, nmin, alpha_crit)
+    print(hdf5_outfilename)
     Fout = h5py.File(hdf5_outfilename, 'w')
 
 
@@ -528,10 +531,11 @@ def ComputeClouds(filepath , options):
     fids = load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
     #Store all keys in memory to reduce I/O load
 #    print '\t Reading all data for Particle Type ', ptype
-    alldata = [];
+    alldata = []
     for k in keys:
         alldata.append(load_from_snapshot.load_from_snapshot(k,ptype,snapdir,snapnum, particle_mask=criteria))
 #    print '\t Reading done, iterating over clouds...'
+    print("Keys: ", keys)
     for k,c in bound_groups.items():
  #       print(len(c), len(np.unique(c)))
         bound_data["Mass"].append(m[c].sum())
