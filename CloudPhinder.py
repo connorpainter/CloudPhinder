@@ -19,6 +19,7 @@ Options:
    --np=<N>                   Number of snapshots to run in parallel [default: 1]
    --ntree=<N>                Number of particles in a group above which PE will be computed via BH-tree [default: 10000]
    --overwrite                Whether to overwrite pre-existing clouds files
+   --units_already_physical   Whether to convert units to physical from comoving
 """
 #   --snapdir=<name>           path to the snapshot folder, e.g. /work/simulations/outputs
 
@@ -36,6 +37,7 @@ from scipy.spatial.distance import cdist
 from matplotlib import pyplot as plt
 import numpy as np
 from sys import argv
+from glob import glob
 import meshoid
 from docopt import docopt
 from multiprocessing import Pool
@@ -299,7 +301,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
                 assigned_group[i] = group_index_a
                 assigned_group[assigned_group==group_index_b] = group_index_a
                 # if this new group is bound, we can delete the old bound group
-                if abs(2*group_KE[group_index_a]/np.abs(group_energy[group_index_a] - group_KE[group_index_a])) < 1.1*alpha_crit:
+                if abs(2*group_KE[group_index_a]/np.abs(group_energy[group_index_a] - group_KE[group_index_a])) < alpha_crit:
                     # old way of doing it: manage list of bound groups
                     # new way: just keep a running record of the largest bound group each member particle has ever belonged to
                     largest_assigned_group[group_ab] = len(group_ab)
@@ -317,7 +319,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
             mgroup = masses[g]
             group_KE[g] += KE_Increment(i, m, v, u, v_COM[g], mgroup)
             group_energy[g] += EnergyIncrement(i, groups[g][:-1], m, mgroup, x, v, u, h, v_COM[g], group_tree[g], particles_since_last_tree[g])
-            if abs(2*group_KE[g]/np.abs(group_energy[g] - group_KE[g])) < 1.1*alpha_crit:
+            if abs(2*group_KE[g]/np.abs(group_energy[g] - group_KE[g])) < alpha_crit:
                 largest_assigned_group[i] = len(groups[g]) + 1
                 assigned_bound_group[i] = g
 #                bound_groups[g] = groups[g][:]
@@ -352,9 +354,6 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
 
 def ComputeClouds(filepath , options):
     outputfolder = options["--outputfolder"]
-    if outputfolder is not "None":
-        if not path.isdir(outputfolder):
-            mkdir(outputfolder)
     if ".hdf5" in filepath: # we have a lone snapshot, no snapdir
         snapnum = int(filepath.split("_")[-1].split(".hdf5")[0].split(".")[0].replace("/",""))
         snapname = filepath.split("_")[-2].split("/")[-1]
@@ -362,17 +361,27 @@ def ComputeClouds(filepath , options):
         if outputfolder == "None": outputfolder = snapdir #getcwd() + "/".join(filepath.split("/")[:-1])
     else: # filepath refers to the directory in which the snapshot's multiple files are stored
         snapnum = int(filepath.split("snapdir_")[-1].replace("/",""))
-        snapname = "snapshot" #filepath.split("_")[-2].split("/")[-1]
+        print(filepath)
+        snapname = glob(filepath+"/*.hdf5")[0].split("_")[-2].split("/")[-1] #"snapshot" #filepath.split("_")[-2].split("/")[-1]
+        print(snapname)
         snapdir = filepath.split("snapdir")[0] + "snapdir" + filepath.split("snapdir")[1]
-        print(snapnum, snapname, snapdir, outputfolder)
+#        print(snapnum, snapname, snapdir, outputfolder)
         if outputfolder == "None": outputfolder = getcwd() + filepath.split(snapdir)[0]
-    if outputfolder == "": outputfolder = "."
 
-#    snapdir = options["--snapdir"]
+    if outputfolder == "": outputfolder = "."
+    if outputfolder is not "None":
+        if not path.isdir(outputfolder):
+            mkdir(outputfolder)
+
+    hdf5_outfilename = outputfolder + '/'+ "Clouds_%d_n%g_alpha%g.hdf5"%(snapnum, nmin, alpha_crit)
+    dat_outfilename = outputfolder + '/' +"bound_%d_n%g_alpha%g.dat"%(snapnum, nmin,alpha_crit)
+    if path.isfile(dat_outfilename) and not options["--overwrite"]: return
+            
     if not snapdir:
         snapdir = getcwd()
         print('Snapshot directory not specified, using local directory of ', snapdir)
 
+    
 
 
 #    print(snapdir, snapnum)
@@ -389,7 +398,7 @@ def ComputeClouds(filepath , options):
     G = float(options["--G"])
     boxsize = options["--boxsize"]
     ptype = int(options["--ptype"])
-    nmin = float(options["--nmin"])
+
 
     #recompute_potential = options["--recompute_potential"]
     softening = float(options["--softening"])
@@ -399,13 +408,14 @@ def ComputeClouds(filepath , options):
         boxsize = None
     fuzz = float(options["--fuzz"])
 
-    npart = load_from_snapshot.load_from_snapshot("NumPart_Total", "Header", snapdir, snapnum)[ptype]
+    npart = load_from_snapshot.load_from_snapshot("NumPart_Total", "Header", snapdir, snapnum, snapshot_name=snapname)[ptype]
+
     if npart < cluster_ngb:
         print("Not enough particles for meaningful cluster analysis!")
         return
     
     #Read gas properties
-    keys = load_from_snapshot.load_from_snapshot("keys",ptype,snapdir,snapnum)
+    keys = load_from_snapshot.load_from_snapshot("keys",ptype,snapdir,snapnum, snapshot_name=snapname)
 
     if keys is 0:
         print("No keys found, noping out!")        
@@ -413,7 +423,7 @@ def ComputeClouds(filepath , options):
 
     criteria = np.ones(npart,dtype=np.bool) # now we refine by particle density
     if "Density" in keys:
-        rho = load_from_snapshot.load_from_snapshot("Density",ptype,snapdir,snapnum)
+        rho = load_from_snapshot.load_from_snapshot("Density",ptype,snapdir,snapnum, snapshot_name=snapname, units_to_physical=(not options["--units_already_physical"]))
         if len(rho) < cluster_ngb:
             print("Not enough particles for meaningful cluster analysis!")
             return
@@ -449,7 +459,7 @@ def ComputeClouds(filepath , options):
     particle_data = {"Density": rho} # now let's store all particle data that satisfies the criteria
     for k in keys:
         if not k in particle_data.keys():
-            particle_data[k] = load_from_snapshot.load_from_snapshot(k,ptype,snapdir,snapnum, particle_mask=criteria)[rho_order]
+            particle_data[k] = load_from_snapshot.load_from_snapshot(k,ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria, units_to_physical=(not options["--units_already_physical"]))[rho_order]
 
     m = particle_data["Masses"]
     x = particle_data["Coordinates"]
@@ -500,7 +510,7 @@ def ComputeClouds(filepath , options):
     bound_data["VirialParameter"] = []
 #    bound_data["SigmaEff"] = []
     
-    hdf5_outfilename = outputfolder + '/'+ "Clouds_%d_n%g_alpha%g.hdf5"%(snapnum, nmin, alpha_crit)
+    
     print(hdf5_outfilename)
     Fout = h5py.File(hdf5_outfilename, 'w')
 
@@ -548,11 +558,11 @@ def ComputeClouds(filepath , options):
     
     #now save the ascii data files
 #        datafile_name = "bound_%s_n%g_alpha%g.dat"%(n,nmin,alpha_crit)
-    dat_outfilename = outputfolder + '/' +"bound_%d_n%g_alpha%g.dat"%(snapnum, nmin,alpha_crit)
+#    dat_outfilename = outputfolder + '/' +"bound_%d_n%g_alpha%g.dat"%(snapnum, nmin,alpha_crit)
     SaveArrayDict(dat_outfilename, bound_data)
 #    SaveArrayDict(filename.split("snapshot")[0] + "unbound_%s.dat"%n, unbound_data)
 
-    
+nmin = float(docopt(__doc__)["--nmin"])
 alpha_crit = float(docopt(__doc__)["--alpha_crit"])
 overwrite =  docopt(__doc__)["--overwrite"]
 ntree = int(docopt(__doc__)["--ntree"])
