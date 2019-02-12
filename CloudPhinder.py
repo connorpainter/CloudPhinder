@@ -229,7 +229,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
     for i in range(len(x)): # do it one particle at a time, in decreasing order of density
         if not i%10000: 
             print(i,len(x),max_group_size)
-            max_group_size=0
+#            max_group_size=0
 #            if masses.values(): print(max(masses.values()))
         ngbi = ngb[i]#[(ngbdist[i] < 3*h[i]) * (ngbdist[i] < 3*h[ngb[i]])]
         ngbi = ngbi[ngbi < len(x)] # , ngb[ngbi < len(x)]
@@ -313,7 +313,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
                     d.pop(group_index_b, None)
                 
             groups[group_index_a].append(i)
-            max_group_size = max(max_group_size, len(particles_since_last_tree[group_index_a]))
+            max_group_size = max(max_group_size, len(groups[group_index_a]))
         if nlower > 0: # assuming we've added a particle to an existing group, we have to update stuff
             g = assigned_group[i]
             mgroup = masses[g]
@@ -329,7 +329,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
             if len(particles_since_last_tree[g]) > ntree:
                 group_tree[g] = pykdgrav.ConstructKDTree(x[groups[g]], m[groups[g]], h[groups[g]])
                 particles_since_last_tree[g][:] = []
-            max_group_size = max(max_group_size, len(particles_since_last_tree[g]))
+            max_group_size = max(max_group_size, len(groups[g]))
 
     # Now assign particles to their respective bound groups
     for i in range(len(assigned_bound_group)):
@@ -409,7 +409,7 @@ def ComputeClouds(filepath , options):
     fuzz = float(options["--fuzz"])
 
     npart = load_from_snapshot.load_from_snapshot("NumPart_Total", "Header", snapdir, snapnum, snapshot_name=snapname)[ptype]
-
+    print(npart)
     if npart < cluster_ngb:
         print("Not enough particles for meaningful cluster analysis!")
         return
@@ -465,6 +465,11 @@ def ComputeClouds(filepath , options):
     x = particle_data["Coordinates"]
     ids = particle_data["ParticleIDs"] #load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
     u = (particle_data["InternalEnergy"] if ptype == 0 else np.zeros_like(m))
+    if "MagneticField" in keys():
+        energy_density_code_units = np.sum(particle_data["MagneticField"]**2,axis=1) / 8 / np.pi * 5.879e9
+        specific_energy = energy_density_code_units / rho
+        u += specific_energy
+        
     zz = (particle_data["Metallicity"] if "Metallicity" in keys else np.zeros_like(m))
     v = particle_data["Velocities"]
 
@@ -581,7 +586,6 @@ def main():
 #    snappaths = "snapdir_600",
     if nproc==1:
         for f in snappaths:
-            sleep(np.random.rand())
             print(f)
             ComputeClouds(f, options)
 #            cProfile.runctx("ComputeClouds(f, options)", {'ComputeClouds': ComputeClouds, 'f': f, 'options': options}, {})
