@@ -88,7 +88,7 @@ def PotentialEnergy(xc, mc, vc, hc, uc, tree=None, particles_not_in_tree=None, x
         phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
     return np.sum(mc*0.5*phic)
 
-#@profile
+##@profile
 def InteractionEnergy(x,m,h, group_a, tree_a, particles_not_in_tree_a, group_b, tree_b, particles_not_in_tree_b):
     xb, mb, hb = x[group_b], m[group_b], h[group_b]    
 #    potential_energy = 0.
@@ -200,14 +200,7 @@ def SaveArrayDict(path, arrdict):
 #@profile
 def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
     phi = -rho
-#    order = phi.argsort()
-#    print(order)
-#    phi[:] = phi[order]
-#    x[:], m[:], v[:], h[:], u[:], rho[:], ids[:], zz[:] = x[order], m[order], v[order], h[order], u[order], rho[order], ids[order], zz[order]
-    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=np.max((3*m/(4*np.pi*rho))**(1./3)))#)
-
-#    print((ngbdist/h[:,np.newaxis])[ngbdist[:,-1] > 3*h])
-#    exit()
+    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=np.max((3*m/(4*np.pi*rho))**(1./3)))
     max_group_size = 0
     groups = {}
     particles_since_last_tree = {}
@@ -407,7 +400,6 @@ def ComputeClouds(filepath , options):
     else:
         boxsize = None
     fuzz = float(options["--fuzz"])
-
     npart = load_from_snapshot.load_from_snapshot("NumPart_Total", "Header", snapdir, snapnum, snapshot_name=snapname)[ptype]
     print(npart)
     if npart < cluster_ngb:
@@ -465,7 +457,7 @@ def ComputeClouds(filepath , options):
     x = particle_data["Coordinates"]
     ids = particle_data["ParticleIDs"] #load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
     u = (particle_data["InternalEnergy"] if ptype == 0 else np.zeros_like(m))
-    if "MagneticField" in keys():
+    if "MagneticField" in keys:
         energy_density_code_units = np.sum(particle_data["MagneticField"]**2,axis=1) / 8 / np.pi * 5.879e9
         specific_energy = energy_density_code_units / rho
         u += specific_energy
@@ -518,7 +510,7 @@ def ComputeClouds(filepath , options):
     
     print(hdf5_outfilename)
     Fout = h5py.File(hdf5_outfilename, 'w')
-
+#    Fout.create_group("Header",data=
 
     i = 0
 #    fids = load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
