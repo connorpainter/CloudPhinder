@@ -311,11 +311,9 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
             group_KE[g] += KE_Increment(i, m, v, u, v_COM[g], mgroup)
             group_energy[g] += EnergyIncrement(i, groups[g][:-1], m, mgroup, x, v, u, h, v_COM[g], group_tree[g], particles_since_last_tree[g])
             if abs(2*group_KE[g]/np.abs(group_energy[g] - group_KE[g])) < alpha_crit:
-                print(len(groups[g]), VirialParameter(groups[g], x, m, h, v, u))                
                 largest_assigned_group[i] = len(groups[g])
 #                assigned_bound_group[i] = g  NOTE: need to assign ALL group members to this group upon adding a particle - see below
                 assigned_bound_group[groups[g]] = g
-#                bound_groups[g] = groups[g][:]
             v_COM[g] = (m[i]*v[i] + mgroup*v_COM[g])/(m[i]+mgroup)
             masses[g] += m[i]
             particles_since_last_tree[g].append(i)
