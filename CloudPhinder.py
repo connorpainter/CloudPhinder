@@ -255,17 +255,13 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
                 assigned_group[i] = group_index_a
             else:
             #OK, we're at a saddle point, so we need to merge those groups
-                group_a, group_b = groups[group_index_a], groups[group_index_b]
-#                print(len(group_a))                
+                group_a, group_b = groups[group_index_a], groups[group_index_b] 
                 ma, mb = masses[group_index_a], masses[group_index_b]
                 xa, xb = COM[group_index_a], COM[group_index_b] 
                 va, vb = v_COM[group_index_a], v_COM[group_index_b]
-#                Ea, Eb = group_energy[group_index_a], group_energy[group_index_b]
                 group_ab = group_a + group_b
-#                if(len(group_a) > 1 and len(group_b)>1): print(group_energy[group_index_a] - group_KE[group_index_a],  PE(group_a, x, m, h, v, u), group_energy[group_index_b] - group_KE[group_index_b], PE(group_b,x,m,h,v,u))
                 groups[group_index_a] = group_ab
                 
-                #group_energy[group_index_a] = group_KE[group_index_a] + group_KE[group_index_b]
                 group_energy[group_index_a] += group_energy[group_index_b]
                 group_KE[group_index_a] += group_KE[group_index_b]
                 group_energy[group_index_a] += 0.5*ma*mb/(ma+mb) * np.sum((va-vb)**2) # energy due to relative motion: 1/2 * mu * dv^2
@@ -294,12 +290,14 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
                 assigned_group[i] = group_index_a
                 assigned_group[assigned_group==group_index_b] = group_index_a
                 # if this new group is bound, we can delete the old bound group
+
                 if abs(2*group_KE[group_index_a]/np.abs(group_energy[group_index_a] - group_KE[group_index_a])) < alpha_crit:
                     # old way of doing it: manage list of bound groups
                     # new way: just keep a running record of the largest bound group each member particle has ever belonged to
                     largest_assigned_group[group_ab] = len(group_ab)
                     assigned_bound_group[group_ab] = group_index_a
-                    
+
+#                    if len(group_ab) > cluster_ngb: print(masses[group_index_a], )
                     #-group_KE[group_index_a]
 #                    print(len(group_ab), group_KE[group_index_a], KE(group_ab, x, m, h, v, u), group_energy[group_index_a]-group_KE[group_index_a], PE(group_ab, x, m, h, v, u))         
                 for d in groups, particles_since_last_tree, group_tree, group_energy, group_KE, COM, v_COM, masses: #, bound_groups, bound_subgroups:
@@ -313,8 +311,10 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
             group_KE[g] += KE_Increment(i, m, v, u, v_COM[g], mgroup)
             group_energy[g] += EnergyIncrement(i, groups[g][:-1], m, mgroup, x, v, u, h, v_COM[g], group_tree[g], particles_since_last_tree[g])
             if abs(2*group_KE[g]/np.abs(group_energy[g] - group_KE[g])) < alpha_crit:
-                largest_assigned_group[i] = len(groups[g]) + 1
-                assigned_bound_group[i] = g
+                print(len(groups[g]), VirialParameter(groups[g], x, m, h, v, u))                
+                largest_assigned_group[i] = len(groups[g])
+#                assigned_bound_group[i] = g  NOTE: need to assign ALL group members to this group upon adding a particle - see below
+                assigned_bound_group[groups[g]] = g
 #                bound_groups[g] = groups[g][:]
             v_COM[g] = (m[i]*v[i] + mgroup*v_COM[g])/(m[i]+mgroup)
             masses[g] += m[i]
