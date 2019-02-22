@@ -20,12 +20,13 @@ Options:
    --ntree=<N>                Number of particles in a group above which PE will be computed via BH-tree [default: 10000]
    --overwrite                Whether to overwrite pre-existing clouds files
    --units_already_physical   Whether to convert units to physical from comoving
+   --max_linking_length=<L>   Maximum radius for neighbor search around a particle [default: 1e100]
 """
 #   --snapdir=<name>           path to the snapshot folder, e.g. /work/simulations/outputs
 
 #alpha_crit = 2
 #potential_mode = False
-
+from __future__ import print_function
 import load_from_snapshot #routine to load snapshots from GIZMo files
 import h5py
 from time import time
@@ -198,9 +199,10 @@ def SaveArrayDict(path, arrdict):
 
 #@jit
 #@profile
-def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
+def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100):
     phi = -rho
-    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=np.max((3*m/(4*np.pi*rho))**(1./3)))
+    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)))#, distance_upper_bound=min(np.max(32 * m/rho)**(1./3), rmax))
+#    print(x[ngb.max()]) #, len(x))
     max_group_size = 0
     groups = {}
     particles_since_last_tree = {}
@@ -219,13 +221,18 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
     
     assigned_bound_group = -np.ones(len(x),dtype=np.int32)
     largest_assigned_group = -np.ones(len(x),dtype=np.int32)
+    
+#    bar = progressbar.ProgressBar(maxval=len(x), widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
+#    bar.start()
     for i in range(len(x)): # do it one particle at a time, in decreasing order of density
-        if not i%10000: 
-            print(i,len(x),max_group_size)
-#            max_group_size=0
-#            if masses.values(): print(max(masses.values()))
-        ngbi = ngb[i]#[(ngbdist[i] < 3*h[i]) * (ngbdist[i] < 3*h[ngb[i]])]
-        ngbi = ngbi[ngbi < len(x)] # , ngb[ngbi < len(x)]
+        if not i%10000:
+            print("Processed %d of %g particles; ~%3.2g%% done."%(i, len(x), 100*(float(i)/len(x))**2))
+
+        ngbi = ngb[i]
+        if np.any(ngbi > len(x) -1):
+            print("Particle %d of density %g has no neighbors..."%(i, rho[i]*404))
+            continue
+#        ngbi = ngb[ngbi < len(x)]
         
 
         lower = phi[ngbi] < phi[i]
@@ -240,7 +247,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32):
             v_COM[i] = v[i]
             COM[i] = x[i]
             masses[i] = m[i]
-            positions[i] = x[i]
+#            positions[i] = x[i]
             softenings[i] = h[i]
             particles_since_last_tree[i] = [i,]
         elif nlower == 1: # if there is only one denser particle, we belong to its group
@@ -483,7 +490,7 @@ def ComputeClouds(filepath , options):
         x *= 1+ np.random.normal(size=x.shape) * 1e-8
 
     t = time()
-    groups, bound_groups, assigned_group = ParticleGroups(x, m, rho, phi, hsml, u, v, zz, ids, cluster_ngb=cluster_ngb)
+    groups, bound_groups, assigned_group = ParticleGroups(x, m, rho, phi, hsml, u, v, zz, ids, cluster_ngb=cluster_ngb, rmax=float(options["--max_linking_length"]))
     t = time() - t
     print("Time: %g"%t)
     print("Done grouping. Computing group properties...")
