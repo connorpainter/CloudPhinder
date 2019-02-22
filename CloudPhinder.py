@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """                                                                            
-Variant of Volker Springel's SUBFIND algorithm that identifies the largest possible self-gravitating structures of a certain particle type. This, newer version relies on the load_from_snapshot routine from GIZMO.
+Algorithm that identifies the largest possible self-gravitating structures of a certain particle type. This, newer version relies on the load_from_snapshot routine from GIZMO.
 
 Usage: CloudPhinder.py <snapshots> ... [options]
 
@@ -79,7 +79,7 @@ def BruteForcePotential2(x_target,x_source, m,h=None,G=1.):
 
 #@jit
 def PotentialEnergy(xc, mc, vc, hc, uc, tree=None, particles_not_in_tree=None, x=None, m=None, h=None):
-    if len(xc) > 1e5: return 0 # this effective sets a cutoff in particle number so we don't waste time on things that are clearly too big to be a GMC
+#    if len(xc) > 1e5: return 0 # this effective sets a cutoff in particle number so we don't waste time on things that are clearly too big to be a GMC
     if len(xc)==1: return -2.8*mc/hc**2 / 2
     if tree:
         phic = pykdgrav.Potential(xc, mc, hc, tree=tree, G=4.301e4)
@@ -201,12 +201,15 @@ def SaveArrayDict(path, arrdict):
 #@profile
 def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100):
     phi = -rho
-    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)))#, distance_upper_bound=min(np.max(32 * m/rho)**(1./3), rmax))
+#    print(min(h.max(), rmax))
+    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=rmax)
+
 #    print(x[ngb.max()]) #, len(x))
     max_group_size = 0
     groups = {}
     particles_since_last_tree = {}
     group_tree = {}
+    group_alpha_history = {}
     group_energy = {}
     group_KE = {}
     group_PE = {}
@@ -222,39 +225,50 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
     assigned_bound_group = -np.ones(len(x),dtype=np.int32)
     largest_assigned_group = -np.ones(len(x),dtype=np.int32)
     
-#    bar = progressbar.ProgressBar(maxval=len(x), widgets=[progressbar.Bar('=', '[', ']'), ' ', progressbar.Percentage()])
-#    bar.start()
     for i in range(len(x)): # do it one particle at a time, in decreasing order of density
         if not i%10000:
             print("Processed %d of %g particles; ~%3.2g%% done."%(i, len(x), 100*(float(i)/len(x))**2))
-
-        ngbi = ngb[i]
-        if np.any(ngbi > len(x) -1):
-            print("Particle %d of density %g has no neighbors..."%(i, rho[i]*404))
-            continue
-#        ngbi = ngb[ngbi < len(x)]
-        
+        if np.any(ngb[i] > len(x) -1):
+            groups[i] = [i,]
+            group_tree[i] = None
+            assigned_group[i] = i
+            group_energy[i] = m[i]*u[i]
+            group_alpha_history[i] = [[rho[i],0],]
+            group_KE[i] = m[i]*u[i]
+            v_COM[i] = v[i]
+            COM[i] = x[i]
+            masses[i] = m[i]
+            particles_since_last_tree[i] = [i,]
+            continue 
+        ngbi = ngb[i][1:]
 
         lower = phi[ngbi] < phi[i]
-        nlower = lower.sum()
+        if lower.sum():
+            ngb_lower, ngbdist_lower = ngbi[lower], ngbdist[i][1:][lower]
+            ngb_lower = ngb_lower[ngbdist_lower.argsort()]
+            nlower = len(ngb_lower)
+        else:
+            nlower = 0
+
+        add_to_existing_group = False
         if nlower == 0: # if this is the densest particle in the kernel, let's create our own group with blackjack and hookers
             groups[i] = [i,]
             group_tree[i] = None
             assigned_group[i] = i
-            group_energy[i] = m[i]*u[i]# -2.8*m[i]**2/h[i] / 2 # kinetic + potential energy
+            group_energy[i] = m[i]*u[i]# - 2.8*m[i]**2/h[i] / 2 # kinetic + potential energy
+            group_alpha_history[i] = [[rho[i],0],]
             group_KE[i] = m[i]*u[i]
 #            if np.abs(group_energy[i]-group_KE[i]) and 2*group_KE[i]/np.abs(group_energy[i] - group_KE[i]) < alpha_crit: bound_groups[i] = [i,]
             v_COM[i] = v[i]
             COM[i] = x[i]
             masses[i] = m[i]
-#            positions[i] = x[i]
-            softenings[i] = h[i]
             particles_since_last_tree[i] = [i,]
-        elif nlower == 1: # if there is only one denser particle, we belong to its group
-            assigned_group[i] = assigned_group[ngbi[lower][0]]
+        elif nlower == 1 or assigned_group[ngb_lower[0]] == assigned_group[ngb_lower[1]]: # if there is only one denser particle, or both of the nearest two denser ones belong to the same group, we belong to that group too
+            assigned_group[i] = assigned_group[ngb_lower[0]]
             groups[assigned_group[i]].append(i)
+            add_to_existing_group = True
         else: # o fuck we're at a saddle point, let's consider both respective groups
-            a, b = ngbi[lower][:2]
+            a, b = ngb_lower[:2]
             group_index_a, group_index_b = assigned_group[a], assigned_group[b]
             if masses[group_index_a] < masses[group_index_b]: group_index_a, group_index_b = group_index_b, group_index_a # make sure group a is the bigger one, switching labels if needed
 
@@ -297,30 +311,29 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
                 assigned_group[i] = group_index_a
                 assigned_group[assigned_group==group_index_b] = group_index_a
                 # if this new group is bound, we can delete the old bound group
-
-                if abs(2*group_KE[group_index_a]/np.abs(group_energy[group_index_a] - group_KE[group_index_a])) < alpha_crit:
-                    # old way of doing it: manage list of bound groups
-                    # new way: just keep a running record of the largest bound group each member particle has ever belonged to
+                avir = abs(2*group_KE[group_index_a]/np.abs(group_energy[group_index_a] - group_KE[group_index_a]))
+                if avir < alpha_crit:
                     largest_assigned_group[group_ab] = len(group_ab)
                     assigned_bound_group[group_ab] = group_index_a
 
-#                    if len(group_ab) > cluster_ngb: print(masses[group_index_a], )
-                    #-group_KE[group_index_a]
-#                    print(len(group_ab), group_KE[group_index_a], KE(group_ab, x, m, h, v, u), group_energy[group_index_a]-group_KE[group_index_a], PE(group_ab, x, m, h, v, u))         
-                for d in groups, particles_since_last_tree, group_tree, group_energy, group_KE, COM, v_COM, masses: #, bound_groups, bound_subgroups:
+                for d in groups, particles_since_last_tree, group_tree, group_energy, group_KE, COM, v_COM, masses: # delete the data from the absorbed group
                     d.pop(group_index_b, None)
+                add_to_existing_group = True
                 
             groups[group_index_a].append(i)
             max_group_size = max(max_group_size, len(groups[group_index_a]))
-        if nlower > 0: # assuming we've added a particle to an existing group, we have to update stuff
+            
+        if add_to_existing_group: # assuming we've added a particle to an existing group, we have to update stuff
             g = assigned_group[i]
             mgroup = masses[g]
             group_KE[g] += KE_Increment(i, m, v, u, v_COM[g], mgroup)
             group_energy[g] += EnergyIncrement(i, groups[g][:-1], m, mgroup, x, v, u, h, v_COM[g], group_tree[g], particles_since_last_tree[g])
-            if abs(2*group_KE[g]/np.abs(group_energy[g] - group_KE[g])) < alpha_crit:
+            avir = abs(2*group_KE[g]/np.abs(group_energy[g] - group_KE[g]))
+            if avir < alpha_crit:
                 largest_assigned_group[i] = len(groups[g])
 #                assigned_bound_group[i] = g  NOTE: need to assign ALL group members to this group upon adding a particle - see below
                 assigned_bound_group[groups[g]] = g
+            group_alpha_history[g].append([rho[i], avir])
             v_COM[g] = (m[i]*v[i] + mgroup*v_COM[g])/(m[i]+mgroup)
             masses[g] += m[i]
             particles_since_last_tree[g].append(i)
@@ -329,10 +342,19 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
                 particles_since_last_tree[g][:] = []
             max_group_size = max(max_group_size, len(groups[g]))
 
+#    for k in group_alpha_history.keys():
+#        if k in assigned_bound_group:
+#        rho, alpha = np.array(group_alpha_history[k])[1:].T
+#        plt.loglog(rho*404, alpha)
+#        plt.loglog()
+#    plt.show()
     # Now assign particles to their respective bound groups
+    print((assigned_bound_group == -1).sum() / len(assigned_bound_group))
     for i in range(len(assigned_bound_group)):
         a = assigned_bound_group[i]
-        if a < 0: continue
+        if a < 0:
+#            if sfr[i] > 0: print(a)
+            continue
 
         if a in bound_groups.keys(): bound_groups[a].append(i)
         else: bound_groups[a] = [i,]
@@ -425,8 +447,6 @@ def ComputeClouds(filepath , options):
             print("Not enough particles for meaningful cluster analysis!")
             return
 
-#        m = load_from_snapshot.load_from_snapshot("Masses",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria)
-#        x = load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria)
     else: # we have to do a kernel density estimate for e.g. dark matter or star particles
         m = load_from_snapshot.load_from_snapshot("Masses",ptype,snapdir,snapnum, snapshot_name=snapname)
         if len(m) < cluster_ngb:
@@ -457,7 +477,7 @@ def ComputeClouds(filepath , options):
     for k in keys:
         if not k in particle_data.keys():
             particle_data[k] = load_from_snapshot.load_from_snapshot(k,ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria, units_to_physical=(not options["--units_already_physical"]))[rho_order]
-
+#    print("Total SFR: %g"%particle_data["StarFormationRate"].sum())
     m = particle_data["Masses"]
     x = particle_data["Coordinates"]
     ids = particle_data["ParticleIDs"] #load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
@@ -469,6 +489,7 @@ def ComputeClouds(filepath , options):
         
     zz = (particle_data["Metallicity"] if "Metallicity" in keys else np.zeros_like(m))
     v = particle_data["Velocities"]
+#    sfr = particle_data["StarFormationRate"]
 
     if "AGS-Softening" in keys:
         hsml = particle_data["AGS-Softening"]
@@ -494,8 +515,8 @@ def ComputeClouds(filepath , options):
     t = time() - t
     print("Time: %g"%t)
     print("Done grouping. Computing group properties...")
-    groupmass = np.array([m[c].sum() for c in bound_groups.values() if len(c)>10])
-    groupid = np.array([c for c in bound_groups.keys() if len(bound_groups[c])>10])
+    groupmass = np.array([m[c].sum() for c in bound_groups.values() if len(c)>11])
+    groupid = np.array([c for c in bound_groups.keys() if len(bound_groups[c])>11])
     groupid = groupid[groupmass.argsort()[::-1]]
     bound_groups = OrderedDict(zip(groupid, [bound_groups[i] for i in groupid]))
 #    exit()
