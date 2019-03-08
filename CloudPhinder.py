@@ -25,7 +25,7 @@ Options:
 #   --snapdir=<name>           path to the snapshot folder, e.g. /work/simulations/outputs
 
 #alpha_crit = 2
-#potential_mode = False
+
 from __future__ import print_function
 import load_from_snapshot #routine to load snapshots from GIZMo files
 import h5py
@@ -53,7 +53,7 @@ from os import mkdir
 from natsort import natsorted
 import cProfile
 from numba import njit
-
+potential_mode = False
 @njit
 def BruteForcePotential2(x_target,x_source, m,h=None,G=1.):
     if h is None: h = np.zeros(x_target.shape[0])
@@ -200,11 +200,9 @@ def SaveArrayDict(path, arrdict):
 #@jit
 #@profile
 def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100):
-    phi = -rho
-#    print(min(h.max(), rmax))
-    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=rmax)
+    if not potential_mode: phi = -rho
+    ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=min(rmax, h.max()))
 
-#    print(x[ngb.max()]) #, len(x))
     max_group_size = 0
     groups = {}
     particles_since_last_tree = {}
@@ -233,7 +231,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
             group_tree[i] = None
             assigned_group[i] = i
             group_energy[i] = m[i]*u[i]
-            group_alpha_history[i] = [[rho[i],0],]
+#            group_alpha_history[i] = [[rho[i],0],]
             group_KE[i] = m[i]*u[i]
             v_COM[i] = v[i]
             COM[i] = x[i]
@@ -256,7 +254,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
             group_tree[i] = None
             assigned_group[i] = i
             group_energy[i] = m[i]*u[i]# - 2.8*m[i]**2/h[i] / 2 # kinetic + potential energy
-            group_alpha_history[i] = [[rho[i],0],]
+#            group_alpha_history[i] = [[rho[i],0],]
             group_KE[i] = m[i]*u[i]
 #            if np.abs(group_energy[i]-group_KE[i]) and 2*group_KE[i]/np.abs(group_energy[i] - group_KE[i]) < alpha_crit: bound_groups[i] = [i,]
             v_COM[i] = v[i]
@@ -333,7 +331,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
                 largest_assigned_group[i] = len(groups[g])
 #                assigned_bound_group[i] = g  NOTE: need to assign ALL group members to this group upon adding a particle - see below
                 assigned_bound_group[groups[g]] = g
-            group_alpha_history[g].append([rho[i], avir])
+#            group_alpha_history[g].append([rho[i], avir])
             v_COM[g] = (m[i]*v[i] + mgroup*v_COM[g])/(m[i]+mgroup)
             masses[g] += m[i]
             particles_since_last_tree[g].append(i)
@@ -342,12 +340,6 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
                 particles_since_last_tree[g][:] = []
             max_group_size = max(max_group_size, len(groups[g]))
 
-#    for k in group_alpha_history.keys():
-#        if k in assigned_bound_group:
-#        rho, alpha = np.array(group_alpha_history[k])[1:].T
-#        plt.loglog(rho*404, alpha)
-#        plt.loglog()
-#    plt.show()
     # Now assign particles to their respective bound groups
     print((assigned_bound_group == -1).sum() / len(assigned_bound_group))
     for i in range(len(assigned_bound_group)):
@@ -361,16 +353,6 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
 
     return groups, bound_groups, assigned_group
 
-    
-#<<<<<<< HEAD
-#def ComputeClouds(filename, options):
-#    n = filename.split("_")[1].split(".")[0]
-#    nmin = float(options["--nmin"])
-#    datafile_name = "bound_%s_n%g_alpha%g.dat"%(n,nmin,alpha_crit)
-#    if overwrite and path.isfile(datafile_name): return
-#    print(filename)
-#=======
-#def ComputeClouds(snapnum, options):
 
 def ComputeClouds(filepath , options):
     outputfolder = options["--outputfolder"]
@@ -489,7 +471,7 @@ def ComputeClouds(filepath , options):
         
     zz = (particle_data["Metallicity"] if "Metallicity" in keys else np.zeros_like(m))
     v = particle_data["Velocities"]
-#    sfr = particle_data["StarFormationRate"]
+    sfr = particle_data["StarFormationRate"]
 
     if "AGS-Softening" in keys:
         hsml = particle_data["AGS-Softening"]
@@ -515,8 +497,10 @@ def ComputeClouds(filepath , options):
     t = time() - t
     print("Time: %g"%t)
     print("Done grouping. Computing group properties...")
-    groupmass = np.array([m[c].sum() for c in bound_groups.values() if len(c)>11])
-    groupid = np.array([c for c in bound_groups.keys() if len(bound_groups[c])>11])
+    groupmass = np.array([m[c].sum() for c in bound_groups.values() if len(c)>3])
+    groupsfr = np.array([sfr[c].sum() for c in bound_groups.values() if len(c)>3])
+    print("Total SFR in clouds: ",  groupsfr.sum())
+    groupid = np.array([c for c in bound_groups.keys() if len(bound_groups[c])>3])
     groupid = groupid[groupmass.argsort()[::-1]]
     bound_groups = OrderedDict(zip(groupid, [bound_groups[i] for i in groupid]))
 #    exit()
