@@ -471,7 +471,8 @@ def ComputeClouds(filepath , options):
         
     zz = (particle_data["Metallicity"] if "Metallicity" in keys else np.zeros_like(m))
     v = particle_data["Velocities"]
-    sfr = particle_data["StarFormationRate"]
+    if "StarFormationRate" in keys: sfr = particle_data["StarFormationRate"]
+    else: sfr = np.zeros_like(m)
 
     if "AGS-Softening" in keys:
         hsml = particle_data["AGS-Softening"]
@@ -537,9 +538,9 @@ def ComputeClouds(filepath , options):
         dx = x[c] - bound_data["Center"][-1]
         eig = np.linalg.eig(np.cov(dx.T))[0]
         bound_data["PrincipalAxes"].append(np.sqrt(eig))
-        bound_data["Reff"].append(np.prod(np.sqrt(eig))**(1./3))
         r = np.sum(dx**2, axis=1)**0.5
         bound_data["HalfMassRadius"].append(np.median(r))
+        bound_data["Reff"].append(np.sqrt(5./3 * np.average(r**2,weights=m[c])))
 #        sigma_eff = meshoid.meshoid(x[c],m[c],hsml[c]).SurfaceDensity(size=4*bound_data["HalfMassRadius"][-1],center=bound_data["Center"][-1], res=400)
         
 #        bound_data["SigmaEff"].append(np.average(sigma_eff,weights=sigma_eff)*1e4)
