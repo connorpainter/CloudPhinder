@@ -39,7 +39,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 from sys import argv
 from glob import glob
-import meshoid
+from Meshoid import Meshoid
 from docopt import docopt
 from multiprocessing import Pool
 from collections import OrderedDict
@@ -375,8 +375,8 @@ def ComputeClouds(filepath , options):
         if not path.isdir(outputfolder):
             mkdir(outputfolder)
 
-    hdf5_outfilename = outputfolder + '/'+ "Clouds_%d_n%g_alpha%g.hdf5"%(snapnum, nmin, alpha_crit)
-    dat_outfilename = outputfolder + '/' +"bound_%d_n%g_alpha%g.dat"%(snapnum, nmin,alpha_crit)
+    hdf5_outfilename = outputfolder + '/'+ "Clouds_%s_n%g_alpha%g.hdf5"%(snapnum, nmin, alpha_crit)
+    dat_outfilename = outputfolder + '/' +"bound_%s_n%g_alpha%g.dat"%(snapnum, nmin,alpha_crit)
     if path.isfile(dat_outfilename) and not options["--overwrite"]: return
             
     if not snapdir:
@@ -417,7 +417,7 @@ def ComputeClouds(filepath , options):
     
     #Read gas properties
     keys = load_from_snapshot.load_from_snapshot("keys",ptype,snapdir,snapnum, snapshot_name=snapname)
-
+#    print(keys)
     if keys is 0:
         print("No keys found, noping out!")        
         return
@@ -436,7 +436,7 @@ def ComputeClouds(filepath , options):
             return
         x = load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname)
         print("Computing density...")
-        rho = meshoid.meshoid(x,m,des_ngb=cluster_ngb).Density()
+        rho = Meshoid(x,m,des_ngb=cluster_ngb).Density()
         print("Density done!")
         criteria = np.arange(len(rho))[(rho*404 > nmin)] # only look at dense gas (>nmin cm^-3)
 #        print("%g particles denser than %g cm^-3" %(criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
@@ -448,6 +448,7 @@ def ComputeClouds(filepath , options):
         
     criteria = np.arange(len(rho))[rho*404 > nmin] # only look at dense gas (>nmin cm^-3)
     print("%g particles denser than %g cm^-3" % (criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
+#    return
     if not criteria.size > cluster_ngb:
         print('Not enough dense particles, exiting...')
         return
@@ -593,7 +594,7 @@ def main():
             ComputeClouds(f, options)
 #            cProfile.runctx("ComputeClouds(f, options)", {'ComputeClouds': ComputeClouds, 'f': f, 'options': options}, {})
     else:
-        Pool(nproc).map(func, snappaths)
+        Pool(nproc).map(func, snappaths,chunksize=1)
 #        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in snappaths)
 
 if __name__ == "__main__": main()
