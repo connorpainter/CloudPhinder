@@ -161,7 +161,7 @@ def EnergyIncrement(i, c, m, M, x, v, u, h, v_com, tree=None, particles_not_in_t
         xa, ma, ha = np.take(x,particles_not_in_tree,axis=0), np.take(m,particles_not_in_tree,axis=0), np.take(h,particles_not_in_tree,axis=0)
         phi += BruteForcePotential2(np.array([x[i],]), xa, ma, h=ha, G=4.301e4)[0]
     if tree:
-        phi += 4.301e4 * pykdgrav.PotentialWalk(x[i], 0., tree, theta=0.7)
+        phi += 4.301e4 * pykdgrav.PotentialWalk(x[i], tree,0., theta=0.7)
     vSqr = np.sum((v[i]-v_com)**2)
     mu = m[i]*M/(m[i]+M)
     return 0.5*mu*vSqr + m[i]*u[i] + m[i]*phi
@@ -354,7 +354,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
     return groups, bound_groups, assigned_group
 
 
-def ComputeClouds(filepath , options):
+def ComputeClouds(filepath):
     outputfolder = options["--outputfolder"]
     if ".hdf5" in filepath: # we have a lone snapshot, no snapdir
         snapnum = int(filepath.split("_")[-1].split(".hdf5")[0].split(".")[0].replace("/",""))
@@ -571,19 +571,18 @@ def ComputeClouds(filepath , options):
     SaveArrayDict(dat_outfilename, bound_data)
 #    SaveArrayDict(filename.split("snapshot")[0] + "unbound_%s.dat"%n, unbound_data)
 
-nmin = float(docopt(__doc__)["--nmin"])
-alpha_crit = float(docopt(__doc__)["--alpha_crit"])
-overwrite =  docopt(__doc__)["--overwrite"]
-ntree = int(docopt(__doc__)["--ntree"])
-
 def func(path):
     """Necessary for the multiprocessing pickling to work"""
     return ComputeClouds(path, docopt(__doc__))
 
-def main():
-    options = docopt(__doc__)
+def main(input):
+    global options; options=input
+    global nmin; nmin = float(options["--nmin"])
+    global alpha_crit; alpha_crit = float(options["--alpha_crit"])
+    global overwrite; overwrite =  options["--overwrite"]
+    global ntree; ntree = int(options["--ntree"])
 #    print(options)
-    nproc=int(options["--np"])
+    global nproc; nproc=int(options["--np"])
 #    snapnum_list = np.array([int(c) for c in options["<snapshots>"][0].split(',')])
 
     snappaths = [p  for p in options["<snapshots>"]] 
@@ -591,10 +590,35 @@ def main():
     if nproc==1:
         for f in snappaths:
             print(f)
-            ComputeClouds(f, options)
+            ComputeClouds(f)
 #            cProfile.runctx("ComputeClouds(f, options)", {'ComputeClouds': ComputeClouds, 'f': f, 'options': options}, {})
     else:
         Pool(nproc).map(func, snappaths,chunksize=1)
 #        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in snappaths)
 
-if __name__ == "__main__": main()
+def make_input(snapshots="snapshot_000.hdf5", outputfolder='None',ptype=0, G=4.301e4, boxsize='None', cluster_ngb=32,nmin=1,softening=1e-5, fuzz=0, alpha_crit=2,np=1,ntree=10000, overwrite=False, units_already_physical=False,max_linking_length=1e100):
+    if (not isinstance(snapshots, list)):
+        snapshots=[snapshots]
+    arguments={
+        "<snapshots>": snapshots,
+        "--outputfolder": outputfolder,
+        "--ptype": ptype,
+        "--G": G,
+        "--boxsize": boxsize,
+        "--cluster_ngb": cluster_ngb,
+        "--nmin": nmin,
+        "--softening": softening,
+        "--fuzz": fuzz,
+        "--alpha_crit": alpha_crit,
+        "--np": np,
+        "--ntree": ntree,
+        "--overwrite": overwrite,
+        "--units_already_physical": units_already_physical,
+        "--max_linking_length": max_linking_length
+        }
+    return arguments
+
+if __name__ == "__main__": 
+    options = docopt(__doc__)
+    main(options)
+    
