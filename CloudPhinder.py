@@ -168,25 +168,6 @@ def PE_Increment(
     phi = -4.301e4 * np.sum(m[c]/cdist([x[i],],x[c]))
     return m[i]*phi
 
-def SaveArrayDict(path, arrdict):
-    """Takes a dictionary of numpy arrays with names as the keys and saves them in an ASCII file with a descriptive header"""
-    header = ""
-    offset = 0
-    
-    for i, k in enumerate(arrdict.keys()):
-        if type(arrdict[k])==list: arrdict[k] = np.array(arrdict[k])
-        if len(arrdict[k].shape) == 1:
-            header += "(%d) "%offset + k + "\n"
-            offset += 1
-        else:
-            header += "(%d-%d) "%(offset, offset+arrdict[k].shape[1]-1) + k + "\n"
-            offset += arrdict[k].shape[1]
-            
-    data = np.column_stack([b for b in arrdict.values()])
-    data = data[(-data[:,0]).argsort()] 
-    np.savetxt(path, data, header=header,  fmt='%.15g', delimiter='\t')
-
-
 def ParticleGroups(
     x, m, rho, phi,
     h, u, v, zz,
@@ -425,7 +406,13 @@ def ComputeClouds(filepath):
 
     criteria = np.ones(npart,dtype=np.bool) # now we refine by particle density
     if "Density" in keys:
-        rho = load_from_snapshot.load_from_snapshot("Density",ptype,snapdir,snapnum, snapshot_name=snapname, units_to_physical=(not options["--units_already_physical"]))
+        rho = load_from_snapshot.load_from_snapshot(
+            "Density",
+            ptype,
+            snapdir,
+            snapnum,
+            snapshot_name=snapname,
+            units_to_physical=(not options["--units_already_physical"]))
         if len(rho) < cluster_ngb:
             print("Not enough particles for meaningful cluster analysis!")
             return
@@ -450,9 +437,16 @@ def ComputeClouds(filepath):
     rho_order = (-rho).argsort()
     rho = rho[rho_order]
     particle_data = {"Density": rho} # now let's store all particle data that satisfies the criteria
+
     for k in keys:
         if not k in particle_data.keys():
-            particle_data[k] = load_from_snapshot.load_from_snapshot(k,ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria, units_to_physical=(not options["--units_already_physical"]))[rho_order]
+            particle_data[k] = load_from_snapshot.load_from_snapshot(
+                k,ptype,
+                snapdir,snapnum,
+                snapshot_name=snapname,
+                particle_mask=criteria,
+                units_to_physical=(not options["--units_already_physical"]))[rho_order]
+
     m = particle_data["Masses"]
     x = particle_data["Coordinates"]
     ids = particle_data["ParticleIDs"] #load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
@@ -484,7 +478,14 @@ def ComputeClouds(filepath):
         x *= 1+ np.random.normal(size=x.shape) * 1e-8
 
     t = time()
-    groups, bound_groups, assigned_group = ParticleGroups(x, m, rho, phi, hsml, u, v, zz, ids, cluster_ngb=cluster_ngb, rmax=float(options["--max_linking_length"]))
+    groups, bound_groups, assigned_group = ParticleGroups(
+        x, m, rho,
+        phi, hsml,
+        u, v, zz,
+        ids,
+        cluster_ngb=cluster_ngb,
+        rmax=float(options["--max_linking_length"]))
+
     t = time() - t
     print("Time: %g"%t)
     print("Done grouping. Computing group properties...")
@@ -583,6 +584,24 @@ def make_input(snapshots="snapshot_000.hdf5", outputfolder='None',ptype=0, G=4.3
         "--max_linking_length": max_linking_length
         }
     return arguments
+
+def SaveArrayDict(path, arrdict):
+    """Takes a dictionary of numpy arrays with names as the keys and saves them in an ASCII file with a descriptive header"""
+    header = ""
+    offset = 0
+    
+    for i, k in enumerate(arrdict.keys()):
+        if type(arrdict[k])==list: arrdict[k] = np.array(arrdict[k])
+        if len(arrdict[k].shape) == 1:
+            header += "(%d) "%offset + k + "\n"
+            offset += 1
+        else:
+            header += "(%d-%d) "%(offset, offset+arrdict[k].shape[1]-1) + k + "\n"
+            offset += arrdict[k].shape[1]
+            
+    data = np.column_stack([b for b in arrdict.values()])
+    data = data[(-data[:,0]).argsort()] 
+    np.savetxt(path, data, header=header,  fmt='%.15g', delimiter='\t')
 
 if __name__ == "__main__": 
     options = docopt(__doc__)
