@@ -26,34 +26,40 @@ Options:
 
 #alpha_crit = 2
 
-from __future__ import print_function
-import load_from_snapshot #routine to load snapshots from GIZMo files
+
+
+## from builtin
 import h5py
-from time import time
-from time import sleep
-from numba import jit, vectorize
-from joblib import Parallel, delayed
+from time import time,sleep
+from os import path,getcwd,mkdir
+from glob import glob
+from collections import OrderedDict
+
+from matplotlib import pyplot as plt
+
+import numpy as np
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
-from matplotlib import pyplot as plt
-import numpy as np
+from numba import jit, njit
+
+
 from sys import argv
-from glob import glob
-from Meshoid import Meshoid
 from docopt import docopt
+
 from multiprocessing import Pool
-from collections import OrderedDict
+
+## from github/mikegrudic
 import pykdgrav
 from pykdgrav.treewalk import GetPotential
 from pykdgrav.kernel import *
-#from pykdgrav.bruteforce import BruteForcePotential, BruteForcePotential2
-from os import path
-from os import getcwd
-from os import mkdir
-from natsort import natsorted
-import cProfile
-from numba import njit
+from Meshoid import Meshoid
+
+## from GIZMO
+import load_from_snapshot #routine to load snapshots from GIZMo files
+
+## global variables
 potential_mode = False
+
 @njit
 def BruteForcePotential2(x_target,x_source, m,h=None,G=1.):
     if h is None: h = np.zeros(x_target.shape[0])
@@ -70,6 +76,7 @@ def BruteForcePotential2(x_target,x_source, m,h=None,G=1.):
             else:
                 if r>0: potential[i] -= m[j]/r
     return G*potential
+
 #@jit
 #def TotalEnergy(xc, mc, vc, hc, uc):
 #    phic = Potential(xc, mc, hc)
@@ -111,26 +118,13 @@ def InteractionEnergy(x,m,h, group_a, tree_a, particles_not_in_tree_a, group_b, 
     return potential_energy
 
 
-#@jit
 def KineticEnergy(xc, mc, vc, hc, uc):
 #    phic = Potential(xc, mc, hc)
     v_well = vc - np.average(vc, weights=mc,axis=0)
     vSqr = np.sum(v_well**2,axis=1)
     return np.sum(mc*(0.5*vSqr + uc))
 
-#@jit
-#def Potential(xc,mc,hc, tree=None):
-#    if len(xc)==1: return -2.8*mc/hc
-#    if len(xc) > 10000:
-#        #phic = pykdgrav.Potential(xc, mc, hc, G=4.301e4, parallel=True)
-#        phic = pykdgrav.Potential(xc, mc, hc, G=4.301e4, parallel=False)
-#    else:
-#        phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
-#    if tree: phic = 
-#    phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
-#    return phic
 
-#@jit
 def KE(c, x, m, h, v, u):
     xc, mc, vc, hc = x[c], m[c], v[c], h[c]
     v_well = vc - np.average(vc, weights=mc,axis=0)
@@ -138,23 +132,13 @@ def KE(c, x, m, h, v, u):
     return (mc*(vSqr/2 + u[c])).sum()
 
 def PE(c, x, m, h, v, u):
-#    print(x[c], m[c], h[c])
     phic = pykdgrav.Potential(x[c], m[c], h[c], G=4.301e4, theta=0.7)
-#    print("Done!")
     return 0.5*(phic*m[c]).sum()
     
 def VirialParameter(c, x, m, h, v, u):
     ke, pe = KE(c,x,m,h,v,u), PE(c,x,m,h,v,u)
     return(np.abs(2*ke/pe))
-#    xc, mc, vc, hc = x[c], m[c], v[c], h[c]
- #   phic = pykdgrav.Potential(xc,mc, hc, G=4.301e4)
- #   v_well = vc - np.average(vc, weights=mc,axis=0)
- #   vSqr = np.sum(v_well**2,axis=1)
- #   return np.abs(2*(0.5*vSqr.sum() + u[c].sum())/phic.sum())
 
-#@jit
-
-#@profile
 def EnergyIncrement(i, c, m, M, x, v, u, h, v_com, tree=None, particles_not_in_tree = None):
     phi = 0.
     if particles_not_in_tree:
@@ -166,14 +150,11 @@ def EnergyIncrement(i, c, m, M, x, v, u, h, v_com, tree=None, particles_not_in_t
     mu = m[i]*M/(m[i]+M)
     return 0.5*mu*vSqr + m[i]*u[i] + m[i]*phi
 
-#@jit
 def KE_Increment(i,m,  v, u, v_com, mtot):
     vSqr = np.sum((v[i]-v_com)**2)
-#    M = m[c].sum()
     mu = m[i]*mtot/(m[i]+mtot)
     return 0.5*mu*vSqr + m[i]*u[i]
 
-#@jit
 def PE_Increment(i, c, m, x, v, u, v_com):
     phi = -4.301e4 * np.sum(m[c]/cdist([x[i],],x[c]))
     return m[i]*phi
@@ -197,8 +178,6 @@ def SaveArrayDict(path, arrdict):
     np.savetxt(path, data, header=header,  fmt='%.15g', delimiter='\t')
 
 
-#@jit
-#@profile
 def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100):
     if not potential_mode: phi = -rho
     ngbdist, ngb = cKDTree(x).query(x,min(cluster_ngb, len(x)), distance_upper_bound=min(rmax, h.max()))
@@ -231,7 +210,6 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
             group_tree[i] = None
             assigned_group[i] = i
             group_energy[i] = m[i]*u[i]
-#            group_alpha_history[i] = [[rho[i],0],]
             group_KE[i] = m[i]*u[i]
             v_COM[i] = v[i]
             COM[i] = x[i]
@@ -254,9 +232,7 @@ def ParticleGroups(x, m, rho, phi, h, u, v, zz, ids, cluster_ngb=32, rmax=1e100)
             group_tree[i] = None
             assigned_group[i] = i
             group_energy[i] = m[i]*u[i]# - 2.8*m[i]**2/h[i] / 2 # kinetic + potential energy
-#            group_alpha_history[i] = [[rho[i],0],]
             group_KE[i] = m[i]*u[i]
-#            if np.abs(group_energy[i]-group_KE[i]) and 2*group_KE[i]/np.abs(group_energy[i] - group_KE[i]) < alpha_crit: bound_groups[i] = [i,]
             v_COM[i] = v[i]
             COM[i] = x[i]
             masses[i] = m[i]
@@ -367,7 +343,6 @@ def ComputeClouds(filepath):
         snapname = glob(filepath+"/*.hdf5")[0].split("_")[-2].split("/")[-1] #"snapshot" #filepath.split("_")[-2].split("/")[-1]
         print(snapname)
         snapdir = filepath.split("snapdir")[0] + "snapdir" + filepath.split("snapdir")[1]
-#        print(snapnum, snapname, snapdir, outputfolder)
         if outputfolder == "None": outputfolder = getcwd() + filepath.split(snapdir)[0]
 
     if outputfolder == "": outputfolder = "."
@@ -384,25 +359,19 @@ def ComputeClouds(filepath):
         print('Snapshot directory not specified, using local directory of ', snapdir)
 
     
-
-
-#    print(snapdir, snapnum)
-    #Check if there is a snapshot like that
-
     fname_found, _, _ =load_from_snapshot.check_if_filename_exists(snapdir,snapnum, snapshot_name=snapname)
     if fname_found!='NULL':    
         print('Snapshot ', snapnum, ' found in ', snapdir)
     else:
         print('Snapshot ', snapnum, ' NOT found in ', snapdir, '\n Skipping it...')
         return
-#>>>>>>> c2d167271edc8886754004f38d451cc07768a500
+
     cluster_ngb = int(float(options["--cluster_ngb"]) + 0.5)
     G = float(options["--G"])
     boxsize = options["--boxsize"]
     ptype = int(options["--ptype"])
 
 
-    #recompute_potential = options["--recompute_potential"]
     softening = float(options["--softening"])
     if boxsize != "None":
         boxsize = float(boxsize)
@@ -417,7 +386,6 @@ def ComputeClouds(filepath):
     
     #Read gas properties
     keys = load_from_snapshot.load_from_snapshot("keys",ptype,snapdir,snapnum, snapshot_name=snapname)
-#    print(keys)
     if keys is 0:
         print("No keys found, noping out!")        
         return
@@ -439,20 +407,12 @@ def ComputeClouds(filepath):
         rho = Meshoid(x,m,des_ngb=cluster_ngb).Density()
         print("Density done!")
         criteria = np.arange(len(rho))[(rho*404 > nmin)] # only look at dense gas (>nmin cm^-3)
-#        print("%g particles denser than %g cm^-3" %(criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
-#        if not criteria.size:
-#            print('No particles dense enough, exiting...')
-#            return
-#        m = np.take(m, criteria, axis=0)
-#        x = np.take(x, criteria, axis=0)
         
     criteria = np.arange(len(rho))[rho*404 > nmin] # only look at dense gas (>nmin cm^-3)
     print("%g particles denser than %g cm^-3" % (criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
-#    return
     if not criteria.size > cluster_ngb:
         print('Not enough dense particles, exiting...')
         return
-#        print(x, load_from_snapshot.load_from_snapshot("Coordinates",ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria))
     rho = np.take(rho, criteria, axis=0)
     rho_order = (-rho).argsort()
     rho = rho[rho_order]
@@ -460,7 +420,6 @@ def ComputeClouds(filepath):
     for k in keys:
         if not k in particle_data.keys():
             particle_data[k] = load_from_snapshot.load_from_snapshot(k,ptype,snapdir,snapnum, snapshot_name=snapname, particle_mask=criteria, units_to_physical=(not options["--units_already_physical"]))[rho_order]
-#    print("Total SFR: %g"%particle_data["StarFormationRate"].sum())
     m = particle_data["Masses"]
     x = particle_data["Coordinates"]
     ids = particle_data["ParticleIDs"] #load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
@@ -485,10 +444,7 @@ def ComputeClouds(filepath):
     if "Potential" in keys: # potential doesn't get used anymore, so this is moot
         phi = particle_data["Potential"] #load_from_snapshot.load_from_snapshot("Potential",ptype,snapdir,snapnum, particle_mask=criteria)
     else:
- #       print('Potential not available in snapshot, calculating...')
         phi = np.zeros_like(m)
-        #phi = pykdgrav.Potential(x, m, hsml)
-#        print('Potential calculation finished')
     
     x, m, rho, phi, hsml, u, v, zz = np.float64(x), np.float64(m), np.float64(rho), np.float64(phi), np.float64(hsml), np.float64(u), np.float64(v), np.float64(zz)
     while len(np.unique(x,axis=0)) < len(x): # make sure no two particles are at the same position
@@ -505,7 +461,6 @@ def ComputeClouds(filepath):
     groupid = np.array([c for c in bound_groups.keys() if len(bound_groups[c])>3])
     groupid = groupid[groupmass.argsort()[::-1]]
     bound_groups = OrderedDict(zip(groupid, [bound_groups[i] for i in groupid]))
-#    exit()
 
     # Now we analyze the clouds and dump their properties
 
@@ -517,15 +472,12 @@ def ComputeClouds(filepath):
     bound_data["HalfMassRadius"] = []
     bound_data["NumParticles"] = []
     bound_data["VirialParameter"] = []
-#    bound_data["SigmaEff"] = []
     
     
     print(hdf5_outfilename)
     Fout = h5py.File(hdf5_outfilename, 'w')
-#    Fout.create_group("Header",data=
 
     i = 0
-#    fids = load_from_snapshot.load_from_snapshot("ParticleIDs",ptype,snapdir,snapnum, particle_mask=criteria)
     fids = ids
     #Store all keys in memory to reduce I/O load
 #    print '\t Reading all data for Particle Type ', ptype
@@ -542,10 +494,6 @@ def ComputeClouds(filepath):
         r = np.sum(dx**2, axis=1)**0.5
         bound_data["HalfMassRadius"].append(np.median(r))
         bound_data["Reff"].append(np.sqrt(5./3 * np.average(r**2,weights=m[c])))
-#        sigma_eff = meshoid.meshoid(x[c],m[c],hsml[c]).SurfaceDensity(size=4*bound_data["HalfMassRadius"][-1],center=bound_data["Center"][-1], res=400)
-        
-#        bound_data["SigmaEff"].append(np.average(sigma_eff,weights=sigma_eff)*1e4)
-#        print(len(c))
         bound_data["VirialParameter"].append(VirialParameter(c, x, m, hsml, v, u))
 
         cluster_id = "Cloud"+ ("%d"%i).zfill(int(np.log10(len(bound_groups))+1))
@@ -553,23 +501,16 @@ def ComputeClouds(filepath):
         N = len(c)
 
         Fout.create_group(cluster_id)
-#        idx = np.in1d(fids, fids[c])
         for k in keys: #range(len(keys)):
-#            k = keys[j]
             Fout[cluster_id].create_dataset('PartType'+str(ptype)+"/"+k, data = particle_data[k].take(c,axis=0))
         i += 1
-#        print "\t \t ",cluster_id
 
     print("Done grouping bound clusters!")
 
        
     Fout.close()
     
-    #now save the ascii data files
-#        datafile_name = "bound_%s_n%g_alpha%g.dat"%(n,nmin,alpha_crit)
-#    dat_outfilename = outputfolder + '/' +"bound_%d_n%g_alpha%g.dat"%(snapnum, nmin,alpha_crit)
     SaveArrayDict(dat_outfilename, bound_data)
-#    SaveArrayDict(filename.split("snapshot")[0] + "unbound_%s.dat"%n, unbound_data)
 
 def func(path):
     """Necessary for the multiprocessing pickling to work"""
@@ -581,20 +522,15 @@ def main(input):
     global alpha_crit; alpha_crit = float(options["--alpha_crit"])
     global overwrite; overwrite =  options["--overwrite"]
     global ntree; ntree = int(options["--ntree"])
-#    print(options)
     global nproc; nproc=int(options["--np"])
-#    snapnum_list = np.array([int(c) for c in options["<snapshots>"][0].split(',')])
 
     snappaths = [p  for p in options["<snapshots>"]] 
-#    snappaths = "snapdir_600",
     if nproc==1:
         for f in snappaths:
             print(f)
             ComputeClouds(f)
-#            cProfile.runctx("ComputeClouds(f, options)", {'ComputeClouds': ComputeClouds, 'f': f, 'options': options}, {})
     else:
         Pool(nproc).map(func, snappaths,chunksize=1)
-#        Parallel(n_jobs=nproc)(delayed(ComputeClouds)(f,options) for f in snappaths)
 
 def make_input(snapshots="snapshot_000.hdf5", outputfolder='None',ptype=0, G=4.301e4, boxsize='None', cluster_ngb=32,nmin=1,softening=1e-5, fuzz=0, alpha_crit=2,np=1,ntree=10000, overwrite=False, units_already_physical=False,max_linking_length=1e100):
     if (not isinstance(snapshots, list)):
