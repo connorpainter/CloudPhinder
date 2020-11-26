@@ -80,10 +80,17 @@ def parse_filepath(filepath,outputfolder):
         print('Snapshot directory not specified, using local directory of ', snapdir)
 
     ## check detected configuration for consistency
-    fname_found, _, _ =load_from_snapshot.check_if_filename_exists(
-        snapdir,
-        snapnum,
-        snapshot_name=snapname)
+    try:
+        fname_found, _, _ =load_from_snapshot.check_if_filename_exists(
+            snapdir,
+            snapnum,
+            snapshot_name=snapname)
+    except NameError:
+        print("Missing load_from_snapshot, can't confirm "+
+            "snapnum, snapdir, snapname decomposition is correct.")
+        ## can at least confirm whether the filepath actually exists
+        fname_found = path.exists(filepath)
+
     if fname_found!='NULL':    
         print('Snapshot ', snapnum, ' found in ', snapdir)
     else:
@@ -180,7 +187,7 @@ def read_particle_data(
     rho = rho[rho_order]
 
     # now let's store all particle data that satisfies the criteria
-    particle_data = {"Density": rho} 
+    particle_data = {"Density": rho,'ParticleType':ptype} 
 
     ## load up the unloaded particle data
     for k in keys:
@@ -196,13 +203,7 @@ def read_particle_data(
 
 
     u = (particle_data["InternalEnergy"] if ptype == 0 else np.zeros_like(m))
-    if "MagneticField" in keys:
-        energy_density_code_units = np.sum(particle_data["MagneticField"]**2,axis=1) / 8 / np.pi * 5.879e9
-        specific_energy = energy_density_code_units / rho
-        u += specific_energy 
-        ## += implies actually happens by alias but let's make it explicit
-        particle_data['InternalEnergy'] = u
-        
+         
     return particle_data
 
 def parse_particle_data(particle_data):
@@ -210,22 +211,36 @@ def parse_particle_data(particle_data):
 
     x = particle_data["Coordinates"]
     m = particle_data["Masses"]
-    rho = praticle_data['Density']
+    rho = particle_data["Density"]
+
+    rho_order = (-rho).argsort() ## sorts by descending density
 
     ## handle smoothing length options
-    if "AGS-Softening" in keys:
+    if "AGS-Softening" in particle_data:
         hsml = particle_data["AGS-Softening"]
-    elif "SmoothingLength" in keys:
+    elif "SmoothingLength" in particle_data:
         hsml = particle_data["SmoothingLength"] 
     else:
         hsml = np.ones_like(m)*softening
 
-    u = (particle_data["InternalEnergy"] if ptype == 0 else np.zeros_like(m))
-    v = particle_data["Velocities"]
-    zz = (particle_data["Metallicity"] if "Metallicity" in keys else np.zeros_like(m))
-    sfr = particle_data["StarFormationRate"] if "StarFormationRate" in keys else np.zeros_like(m)
+    ## handle internal energy (and adding magnetic energy if applicable)
+    u = (particle_data["InternalEnergy"] if particle_data['ParticleType'] == 0 else np.zeros_like(m))
+    if "MagneticField" in particle_data:
+        energy_density_code_units = np.sum(particle_data["MagneticField"]**2,axis=1) / 8 / np.pi * 5.879e9
+        specific_energy = energy_density_code_units / rho
+        u += specific_energy 
+        ## += implies actually happens by alias but let's make it explicit
+        particle_data['InternalEnergy'] = u
 
-    return (x, m, rho, phi, hsml, u, v, zz, sfr)
+    v = particle_data["Velocities"]
+    zz = (particle_data["Metallicity"] if "Metallicity" in particle_data else np.zeros_like(m))
+    sfr = particle_data["StarFormationRate"] if "StarFormationRate" in particle_data else np.zeros_like(m)
+
+    phi = np.zeros_like(m)
+
+    return (x[rho_order], m[rho_order], rho[rho_order],
+        phi, hsml[rho_order], u[rho_order],
+        v[rho_order], zz[rho_order], sfr[rho_order])
 
 ## Output results to disk
 def computeAndDump(
