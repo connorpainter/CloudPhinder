@@ -8,9 +8,10 @@ from time import time
 import numpy as np
 
 ## from github/mikegrudic
-import pykdgrav
-from pykdgrav.treewalk import GetPotential
-from pykdgrav.kernel import *
+from pykdgrav.pykdgrav.treewalk import GetPotential
+from pykdgrav.pykdgrav.kernel import *
+
+import pykdgrav.pykdgrav as pykdgrav
 
 ## global variables
 potential_mode = False
