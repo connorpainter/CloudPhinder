@@ -9,8 +9,13 @@ from collections import OrderedDict
 from Meshoid import Meshoid
 
 ## from GIZMO
-import load_from_snapshot #routine to load snapshots from GIZMo files
+try:
+    import load_from_snapshot #routine to load snapshots from GIZMo files
+except ImportError:
+    print("Missing: load_from_snapshot from GIZMO scripts directory.")
+    
 
+## configuration options
 def make_input(
     snapshots="snapshot_000.hdf5",
     outputfolder='None',
@@ -46,8 +51,8 @@ def make_input(
         }
     return arguments
 
+## Turn filepath into snapnum, snapdir, and snapname (as well as adjust outputdir if necessary)
 def parse_filepath(filepath,outputfolder):
-def make_input(
     # we have a lone snapshot, no snapdir, find the snapshot number and snapdir
     if ".hdf5" in filepath: 
         snapnum = int(filepath.split("_")[-1].split(".hdf5")[0].split(".")[0].replace("/",""))
@@ -87,6 +92,7 @@ def make_input(
  
     return snapnum, snapdir, snapname, outputfolder
 
+## Input particle data from hdf5
 def read_particle_data(
     snapnum,
     snapdir,
@@ -187,20 +193,24 @@ def read_particle_data(
                 units_to_physical=(not units_already_physical))[rho_order]
 
     ## unpack the particle data into some variables
-    m = particle_data["Masses"]
-    x = particle_data["Coordinates"]
-    ids = particle_data["ParticleIDs"] 
+
 
     u = (particle_data["InternalEnergy"] if ptype == 0 else np.zeros_like(m))
     if "MagneticField" in keys:
         energy_density_code_units = np.sum(particle_data["MagneticField"]**2,axis=1) / 8 / np.pi * 5.879e9
         specific_energy = energy_density_code_units / rho
-        u += specific_energy
+        u += specific_energy 
+        ## += implies actually happens by alias but let's make it explicit
+        particle_data['InternalEnergy'] = u
         
-    zz = (particle_data["Metallicity"] if "Metallicity" in keys else np.zeros_like(m))
-    v = particle_data["Velocities"]
+    return particle_data
 
-    sfr = particle_data["StarFormationRate"] if "StarFormationRate" in keys else sfr = np.zeros_like(m)
+def parse_particle_data(particle_data):
+    """Unpack particle data into individual variables."""
+
+    x = particle_data["Coordinates"]
+    m = particle_data["Masses"]
+    rho = praticle_data['Density']
 
     ## handle smoothing length options
     if "AGS-Softening" in keys:
@@ -209,18 +219,15 @@ def read_particle_data(
         hsml = particle_data["SmoothingLength"] 
     else:
         hsml = np.ones_like(m)*softening
-        
-    # potential doesn't get used anymore, so this is moot
-    if "Potential" in keys: 
-        phi = particle_data["Potential"] #load_from_snapshot.load_from_snapshot("Potential",ptype,snapdir,snapnum, particle_mask=criteria)
-    else:
-        phi = np.zeros_like(m)
 
-    return (x, m, rho,
-        phi, hsml, u,
-        v, zz, sfr,
-        particle_data)
+    u = (particle_data["InternalEnergy"] if ptype == 0 else np.zeros_like(m))
+    v = particle_data["Velocities"]
+    zz = (particle_data["Metallicity"] if "Metallicity" in keys else np.zeros_like(m))
+    sfr = particle_data["StarFormationRate"] if "StarFormationRate" in keys else np.zeros_like(m)
 
+    return (x, m, rho, phi, hsml, u, v, zz, sfr)
+
+## Output results to disk
 def computeAndDump(
     particle_data,
     ptype,
@@ -258,7 +265,7 @@ def computeAndDump(
     with h5py.File(hdf5_outfilename, 'w') as Fout:
 
         i = 0
-        fids = ids
+        fids = particle_data["ParticleIDs"] 
         #Store all keys in memory to reduce I/O load
 
         for k,c in bound_groups.items():
@@ -311,4 +318,3 @@ def SaveArrayDict(path, arrdict):
     data = np.column_stack([b for b in arrdict.values()])
     data = data[(-data[:,0]).argsort()] 
     np.savetxt(path, data, header=header,  fmt='%.15g', delimiter='\t')
-

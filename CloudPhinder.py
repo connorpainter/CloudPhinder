@@ -34,10 +34,10 @@ from multiprocessing import Pool
 import itertools
 
 ## from here
-from io_tools import parse_filepath, make_input, read_particle_data, computeAndDump, SaveArrayDict
-from clump_tools import CloudPhind  ## <---- import this to use CloudPhinder externally
+from .io_tools import parse_filepath, make_input, read_particle_data, parse_particle_data, computeAndDump, SaveArrayDict
+from .clump_tools import CloudPhind  ## <---- import this to use CloudPhinder externally
 
-def ComputeClouds(filepath,options):
+def ComputeClouds(filepath,options,particle_data=None):
     ## parses filepath and reformats outputfolder if necessary
     snapnum, snapdir, snapname, outputfolder = parse_filepath(filepath,options["--outputfolder"])
 
@@ -60,17 +60,19 @@ def ComputeClouds(filepath,options):
     ptype = int(options["--ptype"])
     cluster_ngb = int(float(options["--cluster_ngb"]) + 0.5)
 
+    if particle_data is None:
+        particle_data = read_particle_data(
+            snapnum,
+            snapdir,
+            snapname,
+            ptype=ptype,
+            softening=float(options["--softening"]),
+            units_already_physical=bool(options["--units_already_physical"]),
+            cluster_ngb=cluster_ngb)
+
     (x,m,rho,
     phi,hsml,u,
-    v,zz,sfr,
-    particle_data) = read_particle_data(
-        snapnum,
-        snapdir,
-        snapname,
-        ptype=ptype,
-        softening=float(options["--softening"]),
-        units_already_physical=bool(options["--units_already_physical"]),
-        cluster_ngb=cluster_ngb)
+    v,zz,sfr) = parse_particle_data(particle_data)
 
     ## skip this snapshot, there probably weren't enough particles
     if x is None: return
@@ -81,7 +83,7 @@ def ComputeClouds(filepath,options):
         phi,hsml,u,
         v,zz,sfr,
         cluster_ngb=cluster_ngb,
-        max_linking_length=float(options["--max_linking_length"])
+        max_linking_length=float(options["--max_linking_length"]),
         nmin=nmin,
         ntree = int(options["--ntree"]),
         alpha_crit=alpha_crit,
