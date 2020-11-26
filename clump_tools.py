@@ -297,7 +297,7 @@ def ParticleGroups(
 
     return groups, bound_groups, assigned_group
 
-def CloudPhind(
+def ComputeGroups(
     x,m,rho,
     phi,hsml,
     u,v,zz,

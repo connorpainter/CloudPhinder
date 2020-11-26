@@ -35,9 +35,9 @@ import itertools
 
 ## from here
 from .io_tools import parse_filepath, make_input, read_particle_data, parse_particle_data, computeAndDump, SaveArrayDict
-from .clump_tools import CloudPhind  ## <---- import this to use CloudPhinder externally
+from .clump_tools import ComputeGroups
 
-def ComputeClouds(filepath,options,particle_data=None):
+def CloudPhind(filepath,options,particle_data=None):
     ## parses filepath and reformats outputfolder if necessary
     snapnum, snapdir, snapname, outputfolder = parse_filepath(filepath,options["--outputfolder"])
 
@@ -78,7 +78,7 @@ def ComputeClouds(filepath,options,particle_data=None):
     if x is None: return
 
     ## call the cloud finder itself
-    groups, bound_groups, assigned_groups = CloudPhind(
+    groups, bound_groups, assigned_groups = ComputeGroups(
         x,m,rho,
         phi,hsml,u,
         v,zz,sfr,
@@ -108,11 +108,11 @@ def main(options):
     if nproc==1:
         for f in snappaths:
             print(f)
-            ComputeClouds(f,options)
+            CloudPhind(f,options)
     else:
         argss = zip(snappaths,itertools.repeat(options)) 
         with Pool(nproc) as my_pool:
-            my_pool.starmap(ComputeClouds, argss, chunksize=1)
+            my_pool.starmap(CloudPhind, argss, chunksize=1)
 
 if __name__ == "__main__": 
     options = docopt(__doc__)
