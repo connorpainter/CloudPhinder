@@ -173,19 +173,6 @@ def read_particle_data(
         rho = Meshoid(x,m,des_ngb=cluster_ngb).Density()
         print("Density done!")
 
-    # only look at dense gas (>nmin cm^-3)
-    criteria = np.arange(len(rho))[rho*404 > nmin] 
-
-    print("%g particles denser than %g cm^-3" % (criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
-    if not criteria.size > cluster_ngb:
-        print('Not enough /dense/ particles, exiting...')
-        return dummy_return
-
-    ## apply the mask and sort by descending density
-    rho = np.take(rho, criteria, axis=0)
-    rho_order = (-rho).argsort() ## sorts by descending density
-    rho = rho[rho_order]
-
     # now let's store all particle data that satisfies the criteria
     particle_data = {"Density": rho,'ParticleType':ptype} 
 
@@ -196,24 +183,17 @@ def read_particle_data(
                 k,ptype,
                 snapdir,snapnum,
                 snapshot_name=snapname,
-                particle_mask=criteria,
-                units_to_physical=(not units_already_physical))[rho_order]
+                #particle_mask=criteria,
+                units_to_physical=(not units_already_physical))
 
-    ## unpack the particle data into some variables
-
-
-    u = (particle_data["InternalEnergy"] if ptype == 0 else np.zeros_like(m))
-         
     return particle_data
 
-def parse_particle_data(particle_data):
+def parse_particle_data(particle_data,nmin,cluster_ngb):
     """Unpack particle data into individual variables."""
 
     x = particle_data["Coordinates"]
     m = particle_data["Masses"]
     rho = particle_data["Density"]
-
-    rho_order = (-rho).argsort() ## sorts by descending density
 
     ## handle smoothing length options
     if "AGS-Softening" in particle_data:
@@ -236,11 +216,22 @@ def parse_particle_data(particle_data):
     zz = (particle_data["Metallicity"] if "Metallicity" in particle_data else np.zeros_like(m))
     sfr = particle_data["StarFormationRate"] if "StarFormationRate" in particle_data else np.zeros_like(m)
 
-    phi = np.zeros_like(m)
+    # only look at dense gas (>nmin cm^-3)
+    criteria = np.arange(len(rho))[rho*404 > nmin] 
 
-    return (x[rho_order], m[rho_order], rho[rho_order],
-        phi, hsml[rho_order], u[rho_order],
-        v[rho_order], zz[rho_order], sfr[rho_order])
+    print("%g particles denser than %g cm^-3" % (criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
+    if not criteria.size > cluster_ngb:
+        print('Not enough /dense/ particles, exiting...')
+        return dummy_return
+
+    ## apply the mask and sort by descending density
+    rho = np.take(rho, criteria, axis=0)
+    rho_order = (-rho).argsort() ## sorts by descending density
+
+    phi = np.zeros_like(rho)
+    return (x[criteria][rho_order], m[criteria][rho_order], rho[rho_order],
+        phi, hsml[criteria][rho_order], u[criteria][rho_order],
+        v[criteria][rho_order], zz[criteria][rho_order], sfr[criteria][rho_order])
 
 ## Output results to disk
 def computeAndDump(

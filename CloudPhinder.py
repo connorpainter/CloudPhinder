@@ -76,7 +76,7 @@ def CloudPhind(filepath,options,particle_data=None):
     ## unpack the particle data
     (x,m,rho,
     phi,hsml,u,
-    v,zz,sfr) = parse_particle_data(particle_data)
+    v,zz,sfr) = parse_particle_data(particle_data,nmin,cluster_ngb)
 
     ## call the cloud finder itself
     groups, bound_groups, assigned_groups = ComputeGroups(
