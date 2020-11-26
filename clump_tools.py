@@ -3,6 +3,8 @@ from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
 from numba import njit
 
+from time import time
+
 import numpy as np
 
 ## from github/mikegrudic
@@ -124,7 +126,6 @@ def PE_Increment(
 def ParticleGroups(
     x, m, rho, phi,
     h, u, v, zz,
-    ids,
     nmin,
     ntree,
     alpha_crit,
@@ -325,7 +326,6 @@ def ComputeGroups(
         x, m, rho,
         phi, hsml,
         u, v, zz,
-        ids,
         nmin=nmin,
         ntree=ntree,
         alpha_crit=alpha_crit,
