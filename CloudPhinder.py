@@ -23,7 +23,6 @@ Options:
 """
 
 ## from builtin
-from time import time,sleep
 from os import path
 
 import numpy as np
