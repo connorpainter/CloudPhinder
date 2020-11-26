@@ -101,7 +101,7 @@ def read_particle_data(
     
     ## create a dummy return value that the calling function can 
     ##  check against
-    dummy_return = tuple([None]*10)
+    dummy_return = None
 
     ## determine if there are even enough particles in this snapshot to try and
     ##  find clusters from

@@ -60,6 +60,7 @@ def CloudPhind(filepath,options,particle_data=None):
     ptype = int(options["--ptype"])
     cluster_ngb = int(float(options["--cluster_ngb"]) + 0.5)
 
+    ## load the particle data from disk if we weren't provided any
     if particle_data is None:
         particle_data = read_particle_data(
             snapnum,
@@ -70,12 +71,13 @@ def CloudPhind(filepath,options,particle_data=None):
             units_already_physical=bool(options["--units_already_physical"]),
             cluster_ngb=cluster_ngb)
 
+        ## skip this snapshot, there probably weren't enough particles
+        if particle_data is None: return
+
+    ## unpack the particle data
     (x,m,rho,
     phi,hsml,u,
     v,zz,sfr) = parse_particle_data(particle_data)
-
-    ## skip this snapshot, there probably weren't enough particles
-    if x is None: return
 
     ## call the cloud finder itself
     groups, bound_groups, assigned_groups = ComputeGroups(
