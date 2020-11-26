@@ -71,7 +71,7 @@ def parse_filepath(filepath,outputfolder):
 
     ## handle instances of non-default outputfolder 
     if outputfolder == "": outputfolder = "."
-    if outputfolder is not "None":
+    if outputfolder != "None":
         if not path.isdir(outputfolder):
             mkdir(outputfolder)
          
@@ -123,7 +123,7 @@ def read_particle_data(
         snapdir,
         snapnum,
         snapshot_name=snapname)
-    if keys is 0:
+    if keys == 0:
         print("No keys found, noping out!")        
         return dummy_return
 
