@@ -333,5 +333,6 @@ def ComputeGroups(
         cluster_ngb=cluster_ngb,
         rmax=max_linking_length)
     t = time() - t
+    print("Time: %g"%t)
     
-    return groups, bound_groups, assigned_groups
+    return groups, bound_groups, assigned_group
