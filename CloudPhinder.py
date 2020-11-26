@@ -74,9 +74,11 @@ def CloudPhind(filepath,options,particle_data=None):
         if particle_data is None: return
 
     ## unpack the particle data
-    (x,m,rho,
-    phi,hsml,u,
-    v,zz,sfr) = parse_particle_data(particle_data,nmin,cluster_ngb)
+    (new_particle_data,
+    x,m,rho,
+    hsml,u,v,
+    zz,sfr) = parse_particle_data(particle_data,nmin,cluster_ngb)
+    phi = np.zeros_like(rho)
 
     ## call the cloud finder itself
     groups, bound_groups, assigned_groups = ComputeGroups(
@@ -93,10 +95,10 @@ def CloudPhind(filepath,options,particle_data=None):
     ## compute some basic properties of the clouds and dump them and
     ##  the particle data to disk
     computeAndDump(
-        particle_data,
+        x,m,hsml,v,u,
+        new_particle_data,
         ptype,
         bound_groups,
-        assigned_groups,
         hdf5_outfilename,
         dat_outfilename,
         overwrite)

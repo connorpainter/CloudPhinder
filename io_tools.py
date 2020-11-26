@@ -13,6 +13,9 @@ try:
     import load_from_snapshot #routine to load snapshots from GIZMo files
 except ImportError:
     print("Missing: load_from_snapshot from GIZMO scripts directory.")
+
+## from here
+from .clump_tools import VirialParameter
     
 
 ## configuration options
@@ -228,13 +231,18 @@ def parse_particle_data(particle_data,nmin,cluster_ngb):
     rho = np.take(rho, criteria, axis=0)
     rho_order = (-rho).argsort() ## sorts by descending density
 
-    phi = np.zeros_like(rho)
-    return (x[criteria][rho_order], m[criteria][rho_order], rho[rho_order],
-        phi, hsml[criteria][rho_order], u[criteria][rho_order],
-        v[criteria][rho_order], zz[criteria][rho_order], sfr[criteria][rho_order])
+    values = [x[criteria][rho_order], m[criteria][rho_order], rho[rho_order],
+        hsml[criteria][rho_order], u[criteria][rho_order],
+        v[criteria][rho_order], zz[criteria][rho_order], sfr[criteria][rho_order]]
+    keys = ['Coordinates','Masses','Density','SmoothingLength',
+        'InternalEnergy','Velocity','Metallicity','StarFormationRate']
+    new_particle_data =  dict(zip(keys,values))
+    new_particle_data['ParticleIDs'] = particle_data['ParticleIDs'][criteria][rho_order]
+    return new_particle_data,*values
 
 ## Output results to disk
 def computeAndDump(
+    x,m,hsml,v,u,
     particle_data,
     ptype,
     bound_groups,
@@ -242,9 +250,8 @@ def computeAndDump(
     dat_outfilename,
     overwrite):
 
-    print("Time: %g"%t)
-    print("Done grouping. Computing group properties...")
 
+    print("Done grouping. Computing group properties...")
     ## sort the clouds by descending mass
     groupmass = np.array([m[c].sum() for c in bound_groups.values() if len(c)>3])
     groupid = np.array([c for c in bound_groups.keys() if len(bound_groups[c])>3])
@@ -298,7 +305,7 @@ def computeAndDump(
 
             ## dump particle data for this cloud to the hdf5 file
             Fout.create_group(cluster_id)
-            for k in keys: 
+            for k in particle_data.keys(): 
                 Fout[cluster_id].create_dataset('PartType'+str(ptype)+"/"+k, data = particle_data[k].take(c,axis=0))
             i += 1
 
