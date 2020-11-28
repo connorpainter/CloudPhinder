@@ -36,7 +36,7 @@ import itertools
 from .io_tools import parse_filepath, make_input, read_particle_data, parse_particle_data, computeAndDump, SaveArrayDict
 from .clump_tools import ComputeGroups
 
-def CloudPhind(filepath,options,particle_data=None):
+def CloudPhind(filepath,options,particle_data=None,loud=True):
     ## parses filepath and reformats outputfolder if necessary
     snapnum, snapdir, snapname, outputfolder = parse_filepath(filepath,options["--outputfolder"])
 
@@ -52,7 +52,10 @@ def CloudPhind(filepath,options,particle_data=None):
 
     ## check if output already exists, if we aren't being asked to overwrite, short circuit
     overwrite = options["--overwrite"]
-    if path.isfile(dat_outfilename) and not overwrite: return 
+    if path.isfile(dat_outfilename) and not overwrite: 
+        if loud:
+            print("File already exists and --overwrite=False, exiting.")
+        return 
 
     ## read particle data from disk and apply dense gas cut
     ##  also unpacks relevant variables

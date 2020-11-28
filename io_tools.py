@@ -266,12 +266,14 @@ def computeAndDump(
     bound_data = OrderedDict()
     bound_data["Mass"] = []
     bound_data["Center"] = []
-    bound_data["PrincipalAxes"] = []
+    bound_data["PrincipalLengths"] = []
+    bound_data["PrincipalAxes_e1"] = []
+    bound_data["PrincipalAxes_e2"] = []
+    bound_data["PrincipalAxes_e3"] = []
     bound_data["Reff"] = []
     bound_data["HalfMassRadius"] = []
     bound_data["NumParticles"] = []
     bound_data["VirialParameter"] = []
-    
     
     print("Outputting to: ",hdf5_outfilename)
     ## dump to HDF5
@@ -290,8 +292,19 @@ def computeAndDump(
 
             ## find principle axes
             dx = x[c] - bound_data["Center"][-1]
-            eig = np.linalg.eig(np.cov(dx.T))[0]
-            bound_data["PrincipalAxes"].append(np.sqrt(eig))
+
+            evals,evecs = np.linalg.eig(np.cov(dx.T))
+            evecs = evecs.T ## after transpose becomes [e1,e2], which makes sense...? lol
+
+            ## re-arrange so semi-major axis is always 1st
+            sort_mask = np.argsort(-evals)
+            evals,evecs = evals[sort_mask],evecs[sort_mask]
+            evecs[np.all(evecs<0,axis=1)]*=-1 ## take the positive version
+
+            bound_data["PrincipalLengths"].append(np.sqrt(evals))
+            bound_data["PrincipalAxes_e1"].append(evecs[0])
+            bound_data["PrincipalAxes_e2"].append(evecs[1])
+            bound_data["PrincipalAxes_e3"].append(evecs[2])
 
             ## find half mass radius, assumes all particles have 
             ##  same mass
@@ -331,3 +344,40 @@ def SaveArrayDict(path, arrdict):
     data = np.column_stack([b for b in arrdict.values()])
     data = data[(-data[:,0]).argsort()] 
     np.savetxt(path, data, header=header,  fmt='%.15g', delimiter='\t')
+
+## read output from disk for analysis
+def read_dat_output(pathh):
+    ##lol
+
+    if not path.isfile(pathh):
+        raise IOError("%s does not exist."%pathh)
+
+    # (0) Mass
+    # (1-3) Center
+    # (4-6) PrincipalLengths -- sqrt of eigen values of PrincipalAxes, sigma along that axis
+    # (7-9) PrincipalAxes_e1 -- vector of 
+    # (10-12) PrincipalAxes_e2
+    # (13-15) PrincipalAxes_e3
+    # (16) Reff -- mass-weighted RMS radius
+    # (17) HalfMassRadius -- median radius of density sorted particles
+    # (18) NumParticles
+    # (19) VirialParameter
+
+    data = np.genfromtxt(pathh)
+    arrdict = {}
+    for key,value in zip(
+            ['Mass',
+            'cx','cy','cz',
+            'a','b','c',
+            'e1x','e1y','e1z',
+            'e2x','e2y','e2z',
+            'e3x','e3y','e3z',
+            'Reff',
+            'HalfMassRadius',
+            'NumParticles',
+            'VirialParameter'],
+            data.T):
+        arrdict[key] = value
+
+    return arrdict 
+
