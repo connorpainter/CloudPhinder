@@ -33,8 +33,8 @@ from multiprocessing import Pool
 import itertools
 
 ## from here
-from .io_tools import parse_filepath, make_input, read_particle_data, parse_particle_data, computeAndDump, SaveArrayDict
-from .clump_tools import ComputeGroups
+from cloudphinder.io_tools import parse_filepath, make_input, read_particle_data, parse_particle_data, computeAndDump, SaveArrayDict
+from cloudphinder.clump_tools import ComputeGroups
 
 def CloudPhind(filepath,options,particle_data=None,loud=True):
     ## parses filepath and reformats outputfolder if necessary
@@ -68,13 +68,14 @@ def CloudPhind(filepath,options,particle_data=None,loud=True):
             snapnum,
             snapdir,
             snapname,
-            ptype=ptype,
+            ptype,
+            cluster_ngb,
             softening=float(options["--softening"]),
             units_already_physical=bool(options["--units_already_physical"]),
-            cluster_ngb=cluster_ngb)
+            )
 
         ## skip this snapshot, there probably weren't enough particles
-        if particle_data is None: return
+        if particle_data is None: return False
 
     ## unpack the particle data
     (new_particle_data,
@@ -82,6 +83,8 @@ def CloudPhind(filepath,options,particle_data=None,loud=True):
     hsml,u,v,
     zz,sfr) = parse_particle_data(particle_data,nmin,cluster_ngb)
     phi = np.zeros_like(rho)
+
+    if new_particle_data is None: return False
 
     ## call the cloud finder itself
     groups, bound_groups, assigned_groups = ComputeGroups(
@@ -105,6 +108,8 @@ def CloudPhind(filepath,options,particle_data=None,loud=True):
         hdf5_outfilename,
         dat_outfilename,
         overwrite)
+
+    return True
 
 def main(options):
 

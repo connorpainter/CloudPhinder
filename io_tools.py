@@ -15,7 +15,7 @@ except ImportError:
     print("Missing: load_from_snapshot from GIZMO scripts directory.")
 
 ## from here
-from .clump_tools import VirialParameter
+from cloudphinder.clump_tools import VirialParameter
     
 
 ## configuration options
@@ -107,7 +107,10 @@ def read_particle_data(
     snapnum,
     snapdir,
     snapname,
-    cluster_ngb):
+    ptype,
+    cluster_ngb,
+    softening=1e-5,
+    units_already_physical=False):
     
     ## create a dummy return value that the calling function can 
     ##  check against
@@ -194,7 +197,11 @@ def read_particle_data(
 def parse_particle_data(particle_data,nmin,cluster_ngb):
     """Unpack particle data into individual variables."""
 
+    dummy_return = None
+
     x = particle_data["Coordinates"]
+    x = x+np.random.random(x.shape)*1e-6
+
     m = particle_data["Masses"]
     rho = particle_data["Density"]
 
@@ -225,7 +232,8 @@ def parse_particle_data(particle_data,nmin,cluster_ngb):
     print("%g particles denser than %g cm^-3" % (criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
     if not criteria.size > cluster_ngb:
         print('Not enough /dense/ particles, exiting...')
-        return dummy_return
+        return None,*[None]*8
+ 
 
     ## apply the mask and sort by descending density
     rho = np.take(rho, criteria, axis=0)
@@ -250,8 +258,9 @@ def computeAndDump(
     dat_outfilename,
     overwrite):
 
-
     print("Done grouping. Computing group properties...")
+    if len(bound_groups) == 0:
+        print('No groups found.')
     ## sort the clouds by descending mass
     groupmass = np.array([m[c].sum() for c in bound_groups.values() if len(c)>3])
     groupid = np.array([c for c in bound_groups.keys() if len(bound_groups[c])>3])
@@ -355,27 +364,40 @@ def read_dat_output(pathh):
     # (0) Mass
     # (1-3) Center
     # (4-6) PrincipalLengths -- sqrt of eigen values of PrincipalAxes, sigma along that axis
-    # (7-9) PrincipalAxes_e1 -- vector of 
+    ####### added by ABG, only newly run data will have this output
+    # (7-9) PrincipalAxes_e1 -- vector of  
     # (10-12) PrincipalAxes_e2
     # (13-15) PrincipalAxes_e3
+    #######
     # (16) Reff -- mass-weighted RMS radius
     # (17) HalfMassRadius -- median radius of density sorted particles
     # (18) NumParticles
     # (19) VirialParameter
 
+    ## no clumps found
     data = np.genfromtxt(pathh)
+    if data.shape[0] == 0:
+        return {}
+
+    ## only a single clump found
+    if len(data.shape) == 1:
+        data = data[None,:]
+
     arrdict = {}
-    for key,value in zip(
-            ['Mass',
-            'cx','cy','cz',
-            'a','b','c',
-            'e1x','e1y','e1z',
+    keys = (['Mass', 'cx','cy','cz','a','b','c']+
+            ## O.G. data doesn't have the principle axes
+            ##  so let's detect if they're there and parse it
+            ##  accordingly
+            ['e1x','e1y','e1z',
             'e2x','e2y','e2z',
-            'e3x','e3y','e3z',
-            'Reff',
+            'e3x','e3y','e3z']*(data.shape[1] == 20) +  
+            ['Reff',
             'HalfMassRadius',
             'NumParticles',
-            'VirialParameter'],
+            'VirialParameter'])
+
+    for key,value in zip(
+            keys,
             data.T):
         arrdict[key] = value
 
