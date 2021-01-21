@@ -232,7 +232,7 @@ def parse_particle_data(particle_data,nmin,cluster_ngb):
     print("%g particles denser than %g cm^-3" % (criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
     if not criteria.size > cluster_ngb:
         print('Not enough /dense/ particles, exiting...')
-        return None,*[None]*8
+        return tuple([None]*9)
  
 
     ## apply the mask and sort by descending density
@@ -246,7 +246,7 @@ def parse_particle_data(particle_data,nmin,cluster_ngb):
         'InternalEnergy','Velocity','Metallicity','StarFormationRate']
     new_particle_data =  dict(zip(keys,values))
     new_particle_data['ParticleIDs'] = particle_data['ParticleIDs'][criteria][rho_order]
-    return new_particle_data,*values
+    return tuple([new_particle_data] + values)
 
 ## Output results to disk
 def computeAndDump(
