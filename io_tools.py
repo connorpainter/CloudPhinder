@@ -19,7 +19,7 @@ from cloudphinder.clump_tools import VirialParameter
     
 
 ## configuration options
-def make_input(
+def make_CLI_options(
     snapshots="snapshot_000.hdf5",
     outputfolder='None',
     ptype=0,
@@ -33,6 +33,25 @@ def make_input(
     overwrite=False,
     units_already_physical=False,
     max_linking_length=1e100):
+    """
+    Input:
+    snapshots="snapshot_000.hdf5",
+    outputfolder='None',
+    ptype=0,
+    G=4.301e4,
+    cluster_ngb=32,
+    nmin=1,
+    softening=1e-5,
+    alpha_crit=2,
+    np=1,
+    ntree=10000,
+    overwrite=False,
+    units_already_physical=False,
+    max_linking_length=1e100)
+
+    Output:
+    arguments -> formatted dictionary of CLI arguments
+    """
 
     if (not isinstance(snapshots, list)):
         snapshots=[snapshots]

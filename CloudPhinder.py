@@ -37,11 +37,21 @@ from cloudphinder.io_tools import parse_filepath, make_input, read_particle_data
 from cloudphinder.clump_tools import ComputeGroups
 
 def CloudPhind(filepath,options,particle_data=None,loud=True):
+    """
+    Input:
+    filepath - path to snapshot data, used to determine output filename
+        so it is not optional when particle_data is not None.
+    options - CLI arguments defined by CloudPhinder.__doc__
+    particle_data=None - pre-loaded particle data in a dictionary matching 
+        GIZMO keys.
+    loud=True - flag to print to the console
+    """
+ 
     ## parses filepath and reformats outputfolder if necessary
     snapnum, snapdir, snapname, outputfolder = parse_filepath(filepath,options["--outputfolder"])
 
     ## skip if the file was not parseable
-    if snapnum is None: return
+    if snapnum is None: return False
 
     ## generate output filenames
     nmin = float(options["--nmin"])
@@ -55,7 +65,7 @@ def CloudPhind(filepath,options,particle_data=None,loud=True):
     if path.isfile(dat_outfilename) and not overwrite: 
         if loud:
             print("File already exists and --overwrite=False, exiting.")
-        return 
+        return False
 
     ## read particle data from disk and apply dense gas cut
     ##  also unpacks relevant variables
