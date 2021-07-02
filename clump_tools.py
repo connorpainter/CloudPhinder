@@ -80,7 +80,7 @@ def EnergyIncrement(
         ## have to get potential from particles not in the tree by brute force
         xa, ma, ha = np.take(x,particles_not_in_tree,axis=0), np.take(m,particles_not_in_tree,axis=0), np.take(h,particles_not_in_tree,axis=0)
         xtarget = np.array([x[i],])
-        phi += pytreegrav.PotentialTarget_bruteforce(xtarget, np.zeros(xtarget.size), xa, ma, h=ha, G=4.301e4)[0]
+        phi += pytreegrav.PotentialTarget_bruteforce(xtarget, np.zeros(xtarget.size), xa, ma, ha, G=4.301e4)[0]
     if tree:
         phi += 4.301e4 * pytreegrav.TargetPotential(
             x[i],

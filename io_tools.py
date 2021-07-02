@@ -1,6 +1,6 @@
 ## from builtin
 import h5py
-from os import path,getcwd,mkdir
+from os import path,getcwd,makedirs
 from glob import glob
 import numpy as np
 from collections import OrderedDict
@@ -66,9 +66,7 @@ def parse_filepath(filepath,outputfolder):
     # filepath refers to the directory in which the snapshot's multiple files are stored
     else: 
         snapnum = int(filepath.split("snapdir_")[-1].replace("/",""))
-        print(filepath)
         snapname = glob(filepath+"/*.hdf5")[0].split("_")[-2].split("/")[-1] #"snapshot" #filepath.split("_")[-2].split("/")[-1]
-        print(snapname)
         snapdir = filepath.split("snapdir")[0] + "snapdir" + filepath.split("snapdir")[1]
         if outputfolder == "None": outputfolder = getcwd() + filepath.split(snapdir)[0]
 
@@ -76,7 +74,7 @@ def parse_filepath(filepath,outputfolder):
     if outputfolder == "": outputfolder = "."
     if outputfolder != "None":
         if not path.isdir(outputfolder):
-            mkdir(outputfolder)
+            makedirs(outputfolder)
          
     if not snapdir:
         snapdir = getcwd()
@@ -124,7 +122,6 @@ def read_particle_data(
         snapdir,
         snapnum,
         snapshot_name=snapname)[ptype]
-    print(npart)
     if npart < cluster_ngb:
         print("Not enough particles for meaningful cluster analysis!")
         return dummy_return

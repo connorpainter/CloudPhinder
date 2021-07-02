@@ -118,7 +118,6 @@ def main(options):
     snappaths = [p  for p in options["<snapshots>"]] 
     if nproc==1:
         for f in snappaths:
-            print(f)
             CloudPhind(f,options)
     else:
         argss = zip(snappaths,itertools.repeat(options)) 
