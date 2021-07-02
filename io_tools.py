@@ -277,9 +277,9 @@ def computeAndDump(
     bound_data["HalfMassRadius"] = []
     bound_data["NumParticles"] = []
     bound_data["VirialParameter"] = []
-    #bound_data["PrincipalAxes_e1"] = []
-    #bound_data["PrincipalAxes_e2"] = []
-    #bound_data["PrincipalAxes_e3"] = []
+    bound_data["PrincipalAxes_e1"] = []
+    bound_data["PrincipalAxes_e2"] = []
+    bound_data["PrincipalAxes_e3"] = []
 
     print("Outputting to: ",hdf5_outfilename)
     ## dump to HDF5
@@ -325,9 +325,9 @@ def computeAndDump(
                 Fout[cluster_id].create_dataset('PartType'+str(ptype)+"/"+k, data = particle_data[k].take(c,axis=0))
             i += 1
 
-            #bound_data["PrincipalAxes_e1"].append(evecs[0])
-            #bound_data["PrincipalAxes_e2"].append(evecs[1])
-            #bound_data["PrincipalAxes_e3"].append(evecs[2])
+            bound_data["PrincipalAxes_e1"].append(evecs[0])
+            bound_data["PrincipalAxes_e2"].append(evecs[1])
+            bound_data["PrincipalAxes_e3"].append(evecs[2])
 
         print("Done grouping bound clusters!")
 
