@@ -8,45 +8,31 @@ from time import time
 import numpy as np
 
 ## from github/mikegrudic
-from pykdgrav.pykdgrav.treewalk import GetPotential
-from pykdgrav.pykdgrav.kernel import *
 
-import pykdgrav.pykdgrav as pykdgrav
+import pytreegrav as pytreegrav
 
 ## global variables
 potential_mode = False
 
-@njit
-def BruteForcePotential2(x_target,x_source, m,h=None,G=1.):
-    if h is None: h = np.zeros(x_target.shape[0])
-    potential = np.zeros(x_target.shape[0])
-    for i in range(x_target.shape[0]):
-        for j in range(x_source.shape[0]):
-            dx = x_target[i,0]-x_source[j,0]
-            dy = x_target[i,1]-x_source[j,1]
-            dz = x_target[i,2]-x_source[j,2]
-            r = np.sqrt(dx*dx + dy*dy + dz*dz)
-            if r < h[j]:
-                potential[i] += m[j] * PotentialKernel(r, h[j])
-            else:
-                if r>0: potential[i] -= m[j]/r
-    return G*potential
+######## Energy functions ######## 
+def KE(c, x, m, h, v, u):
+    """ c - clump index
+        x - 2D array of positions (Nclump,N_this_clump)
+        m - 2D array of masses (Nclump,N_this_clump)
+        h - 2D array of smoothing lengths (Nclump,N_this_clump)
+        v - 2D array of velocities (Nclump,N_this_clump)
+        u - 2D array of internal energies (Nclump,N_this_clump)
+    """
+    xc, mc, vc, hc = x[c], m[c], v[c], h[c]
 
-def PotentialEnergy(
-    xc, mc, vc, hc, uc,
-    tree=None,
-    particles_not_in_tree=None,
-    x=None, m=None, h=None):
+    ## velocity w.r.t. com velocity of clump
+    v_well = vc - np.average(vc, weights=mc,axis=0)
+    vSqr = np.sum(v_well**2,axis=1)
+    return (mc*(vSqr/2 + u[c])).sum()
 
-#    if len(xc) > 1e5: return 0 # this effective sets a cutoff in particle number so we don't waste time on things that are clearly too big to be a GMC
-    if len(xc)==1: return -2.8*mc/hc**2 / 2
-    if tree:
-        phic = pykdgrav.Potential(xc, mc, hc, tree=tree, G=4.301e4)
-        if particles_not_in_tree: # have to add the potential from the stuff that's not in the tree
-            phic += BruteForcePotential2(xc, x[particles_not_in_tree], m[particles_not_in_tree], h=h[particles_not_in_tree], G=4.301e4)
-    else:
-        phic = BruteForcePotential(xc, mc, hc, G=4.301e4)
-    return np.sum(mc*0.5*phic)
+def PE(c, x, m, h, v, u):
+    phic = pytreegrav.Potential(x[c], m[c], h[c], G=4.301e4, theta=0.7)
+    return 0.5*(phic*m[c]).sum()
 
 def InteractionEnergy(
     x, m, h,
@@ -57,51 +43,51 @@ def InteractionEnergy(
 
     xb, mb, hb = x[group_b], m[group_b], h[group_b]    
     if tree_a:
-        phi = GetPotential(xb, tree_a, G=4.301e4,theta=.7)
+        ## evaluate potential from the particles in the tree
+        phi = pytreegrav.PotentialTarget(
+            xb,
+            None, ## pos source
+            None, ## mass source
+            tree=tree_a, ## source tree
+            G=4.301e4,
+            theta=.7)
+
+        ## brute force the particles not in the tree
         xa, ma, ha = np.take(x, particles_not_in_tree_a,axis=0), np.take(m, particles_not_in_tree_a,axis=0), np.take(h, particles_not_in_tree_a,axis=0)
-        phi += BruteForcePotential2(xb, xa, ma, ha,G=4.301e4)
+        phi += pytreegrav.PotentialTarget_bruteforce(xb, np.zeros(xb.size), xa, ma, ha,G=4.301e4)
     else:
+        ## have to brute force all the particles
         xa, ma, ha = x[group_a], m[group_a], h[group_a]        
-        phi = BruteForcePotential2(xb, xa, ma, ha,G=4.301e4)
+        phi = pytreegrav.PotentialTarget_bruteforce(xb, np.zeros(xb.size), xa, ma, ha,G=4.301e4)
     potential_energy = (mb*phi).sum()
     return potential_energy
-
-
-def KineticEnergy(xc, mc, vc, hc, uc):
-#    phic = Potential(xc, mc, hc)
-    v_well = vc - np.average(vc, weights=mc,axis=0)
-    vSqr = np.sum(v_well**2,axis=1)
-    return np.sum(mc*(0.5*vSqr + uc))
-
-
-def KE(c, x, m, h, v, u):
-    xc, mc, vc, hc = x[c], m[c], v[c], h[c]
-    v_well = vc - np.average(vc, weights=mc,axis=0)
-    vSqr = np.sum(v_well**2,axis=1)
-    return (mc*(vSqr/2 + u[c])).sum()
-
-def PE(c, x, m, h, v, u):
-    phic = pykdgrav.Potential(x[c], m[c], h[c], G=4.301e4, theta=0.7)
-    return 0.5*(phic*m[c]).sum()
     
 def VirialParameter(c, x, m, h, v, u):
     ke, pe = KE(c,x,m,h,v,u), PE(c,x,m,h,v,u)
     return(np.abs(2*ke/pe))
 
+######## Energy increment functions ######## 
 def EnergyIncrement(
     i,
     c, m, M,
     x, v, u, h,
     v_com,
     tree=None,
-    particles_not_in_tree = None):
+    particles_not_in_tree=None):
 
     phi = 0.
     if particles_not_in_tree:
+        ## have to get potential from particles not in the tree by brute force
         xa, ma, ha = np.take(x,particles_not_in_tree,axis=0), np.take(m,particles_not_in_tree,axis=0), np.take(h,particles_not_in_tree,axis=0)
-        phi += BruteForcePotential2(np.array([x[i],]), xa, ma, h=ha, G=4.301e4)[0]
+        xtarget = np.array([x[i],])
+        phi += pytreegrav.PotentialTarget_bruteforce(xtarget, np.zeros(xtarget.size), xa, ma, h=ha, G=4.301e4)[0]
     if tree:
-        phi += 4.301e4 * pykdgrav.PotentialWalk(x[i], tree,0., theta=0.7)
+        phi += 4.301e4 * pytreegrav.TargetPotential(
+            x[i],
+            None,None, ## source pos and mass
+            tree=tree,
+            theta=0.7)
+            
     vSqr = np.sum((v[i]-v_com)**2)
     mu = m[i]*M/(m[i]+M)
     return 0.5*mu*vSqr + m[i]*u[i] + m[i]*phi
@@ -124,6 +110,7 @@ def PE_Increment(
     phi = -4.301e4 * np.sum(m[c]/cdist([x[i],],x[c]))
     return m[i]*phi
 
+######## Grouping functions ######## 
 def ParticleGroups(
     x, m, rho, phi,
     h, u, v, zz,
@@ -156,7 +143,8 @@ def ParticleGroups(
     assigned_bound_group = -np.ones(len(x),dtype=np.int32)
     largest_assigned_group = -np.ones(len(x),dtype=np.int32)
     
-    for i in range(len(x)): # do it one particle at a time, in decreasing order of density
+    for i in range(len(x)):
+        ## do it one particle at a time, in decreasing order of density
         if not i%10000:
             print("Processed %d of %g particles; ~%3.2g%% done."%(i, len(x), 100*(float(i)/len(x))**2))
         if np.any(ngb[i] > len(x) -1):
@@ -233,7 +221,10 @@ def ParticleGroups(
                 if len(group_a) > ntree: 
                     # if the smaller of the two is also large, let's build a whole new tree, and a whole new adventure
                     if len(group_b) > 512: 
-                        group_tree[group_index_a] = pykdgrav.ConstructKDTree(np.take(x,group_ab,axis=0), np.take(m,group_ab), np.take(h,group_ab))
+                        group_tree[group_index_a] = pytreegrav.ConstructTree(
+                            np.take(x,group_ab,axis=0),
+                            np.take(m,group_ab),
+                            np.take(h,group_ab))
                         particles_since_last_tree[group_index_a][:] = []
                     # otherwise we want to keep the old tree from group a, and just add group b to the list of particles_since_last_tree
                     else:  
@@ -242,7 +233,7 @@ def ParticleGroups(
                     particles_since_last_tree[group_index_a][:] = group_ab[:]
                     
                 if len(particles_since_last_tree[group_index_a]) > ntree:
-                    group_tree[group_index_a] = pykdgrav.ConstructKDTree(
+                    group_tree[group_index_a] = pytreegrav.ConstructTree(
                         np.take(x,group_ab,axis=0),
                         np.take(m,group_ab),
                         np.take(h,group_ab))
@@ -283,7 +274,7 @@ def ParticleGroups(
             masses[g] += m[i]
             particles_since_last_tree[g].append(i)
             if len(particles_since_last_tree[g]) > ntree:
-                group_tree[g] = pykdgrav.ConstructKDTree(x[groups[g]], m[groups[g]], h[groups[g]])
+                group_tree[g] = pytreegrav.ConstructTree(x[groups[g]], m[groups[g]], h[groups[g]])
                 particles_since_last_tree[g][:] = []
             max_group_size = max(max_group_size, len(groups[g]))
 
