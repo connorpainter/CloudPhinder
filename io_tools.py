@@ -273,14 +273,14 @@ def computeAndDump(
     bound_data["Mass"] = []
     bound_data["Center"] = []
     bound_data["PrincipalLengths"] = []
-    bound_data["PrincipalAxes_e1"] = []
-    bound_data["PrincipalAxes_e2"] = []
-    bound_data["PrincipalAxes_e3"] = []
     bound_data["Reff"] = []
     bound_data["HalfMassRadius"] = []
     bound_data["NumParticles"] = []
     bound_data["VirialParameter"] = []
-    
+    #bound_data["PrincipalAxes_e1"] = []
+    #bound_data["PrincipalAxes_e2"] = []
+    #bound_data["PrincipalAxes_e3"] = []
+
     print("Outputting to: ",hdf5_outfilename)
     ## dump to HDF5
     with h5py.File(hdf5_outfilename, 'w') as Fout:
@@ -308,9 +308,6 @@ def computeAndDump(
             evecs[np.all(evecs<0,axis=1)]*=-1 ## take the positive version
 
             bound_data["PrincipalLengths"].append(np.sqrt(evals))
-            bound_data["PrincipalAxes_e1"].append(evecs[0])
-            bound_data["PrincipalAxes_e2"].append(evecs[1])
-            bound_data["PrincipalAxes_e3"].append(evecs[2])
 
             ## find half mass radius, assumes all particles have 
             ##  same mass
@@ -327,6 +324,10 @@ def computeAndDump(
             for k in particle_data.keys(): 
                 Fout[cluster_id].create_dataset('PartType'+str(ptype)+"/"+k, data = particle_data[k].take(c,axis=0))
             i += 1
+
+            #bound_data["PrincipalAxes_e1"].append(evecs[0])
+            #bound_data["PrincipalAxes_e2"].append(evecs[1])
+            #bound_data["PrincipalAxes_e3"].append(evecs[2])
 
         print("Done grouping bound clusters!")
 
@@ -361,15 +362,14 @@ def read_dat_output(pathh):
     # (0) Mass
     # (1-3) Center
     # (4-6) PrincipalLengths -- sqrt of eigen values of PrincipalAxes, sigma along that axis
+    # (7) Reff -- mass-weighted RMS radius
+    # (8) HalfMassRadius -- median radius of density sorted particles
+    # (9) NumParticles
+    # (10) VirialParameter
     ####### added by ABG, only newly run data will have this output
-    # (7-9) PrincipalAxes_e1 -- vector of  
-    # (10-12) PrincipalAxes_e2
-    # (13-15) PrincipalAxes_e3
-    #######
-    # (16) Reff -- mass-weighted RMS radius
-    # (17) HalfMassRadius -- median radius of density sorted particles
-    # (18) NumParticles
-    # (19) VirialParameter
+    # (11-13) PrincipalAxes_e1 -- vector of  
+    # (14-16) PrincipalAxes_e2
+    # (17-19) PrincipalAxes_e3
 
     ## no clumps found
     data = np.genfromtxt(pathh)
@@ -381,17 +381,17 @@ def read_dat_output(pathh):
         data = data[None,:]
 
     arrdict = {}
-    keys = (['Mass', 'cx','cy','cz','a','b','c']+
-            ## O.G. data doesn't have the principle axes
-            ##  so let's detect if they're there and parse it
-            ##  accordingly
-            ['e1x','e1y','e1z',
-            'e2x','e2y','e2z',
-            'e3x','e3y','e3z']*(data.shape[1] == 20) +  
+    keys = (['Mass', 'cx','cy','cz','a','b','c'] +
             ['Reff',
             'HalfMassRadius',
             'NumParticles',
-            'VirialParameter'])
+            'VirialParameter'] +
+            ## O.G. data doesn't have the principle axes
+            ##  so let's detect if they're there and parse it
+            ##  accordingly  
+            ['e1x','e1y','e1z',
+            'e2x','e2y','e2z',
+            'e3x','e3y','e3z']*(data.shape[1] == 20))
 
     for key,value in zip(
             keys,
