@@ -6,7 +6,7 @@ import numpy as np
 from collections import OrderedDict
 
 ## from github/mikegrudic
-from Meshoid import Meshoid
+from meshoid import Meshoid
 
 ## from GIZMO
 try:
@@ -93,8 +93,8 @@ def parse_filepath(filepath,outputfolder):
     if outputfolder == "": outputfolder = "."
     if outputfolder != "None":
         if not path.isdir(outputfolder):
-            makedirs(outputfolder)
-         
+            makedirs(outputfolder) 
+        
     if not snapdir:
         snapdir = getcwd()
         print('Snapshot directory not specified, using local directory of ', snapdir)
@@ -133,6 +133,9 @@ def read_particle_data(
     ##  check against
     dummy_return = None
 
+    # list of data required for cloud phinding
+    required_snapdata = "Masses", "InternalEnergy", "Velocities", "MagneticField", "Coordinates", "SmoothingLength", "Density", "ParticleIDs"
+
     ## determine if there are even enough particles in this snapshot to try and
     ##  find clusters from
     npart = load_from_snapshot.load_from_snapshot(
@@ -157,7 +160,8 @@ def read_particle_data(
         return dummy_return
 
     # now we refine by particle density, by applying a density mask `criteria`
-    criteria = np.ones(npart,dtype=np.bool) 
+    criteria = np.ones(npart,dtype=bool) 
+    print(list(keys))
     if "Density" in keys:
         rho = load_from_snapshot.load_from_snapshot(
             "Density",
@@ -197,10 +201,11 @@ def read_particle_data(
 
     # now let's store all particle data that satisfies the criteria
     particle_data = {"Density": rho,'ParticleType':ptype} 
-
+    
+    
     ## load up the unloaded particle data
     for k in keys:
-        if not k in particle_data.keys():
+        if (k in required_snapdata) and (not k in particle_data.keys()):
             particle_data[k] = load_from_snapshot.load_from_snapshot(
                 k,ptype,
                 snapdir,snapnum,
@@ -243,7 +248,7 @@ def parse_particle_data(particle_data,nmin,cluster_ngb):
     sfr = particle_data["StarFormationRate"] if "StarFormationRate" in particle_data else np.zeros_like(m)
 
     # only look at dense gas (>nmin cm^-3)
-    criteria = np.arange(len(rho))[rho*404 > nmin] 
+    criteria = np.arange(len(rho))[rho*404*0.74 > nmin] 
 
     print("%g particles denser than %g cm^-3" % (criteria.size,nmin))  #(np.sum(rho*147.7>nmin), nmin))
     if not criteria.size > cluster_ngb:

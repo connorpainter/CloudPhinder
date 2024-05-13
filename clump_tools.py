@@ -31,7 +31,7 @@ def KE(c, x, m, h, v, u):
     return (mc*(vSqr/2 + u[c])).sum()
 
 def PE(c, x, m, h, v, u):
-    phic = pytreegrav.Potential(x[c], m[c], h[c], G=4.301e4, theta=0.7)
+    phic = pytreegrav.Potential(x[c], m[c], h[c], G=4.301e4, theta=0.7,parallel=True)
     return 0.5*(phic*m[c]).sum()
 
 def InteractionEnergy(
@@ -315,9 +315,9 @@ def ComputeGroups(
 
     t = time()
     groups, bound_groups, assigned_group = ParticleGroups(
-        x, m, rho,
-        phi, hsml,
-        u, v, zz,
+        x/1e3, m/1e10, rho,
+        phi, hsml/1e3,
+        u/1e6, v/1e6, zz,
         nmin=nmin,
         ntree=ntree,
         alpha_crit=alpha_crit,

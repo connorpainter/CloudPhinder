@@ -16,9 +16,10 @@ Options:
    --fuzz=<L>                 Randomly perturb particle positions by this small fraction to avoid problems with particles at the same position in 32bit floating point precision data [default: 0]
    --alpha_crit=<f>           Critical virial parameter to be considered bound [default: 2.]
    --np=<N>                   Number of snapshots to run in parallel [default: 1]
-   --ntree=<N>                Number of particles in a group above which PE will be computed via BH-tree [default: 10000]
+   --ntree=<N>                Number of particles in a group before a BH-tree should be constructed to compute its properties [default: 10000]
    --overwrite                Whether to overwrite pre-existing clouds files
    --units_already_physical   Whether to convert units to physical from comoving
+   --starforge_units 
    --max_linking_length=<L>   Maximum radius for neighbor search around a particle [default: 1e100]
 """
 
@@ -33,7 +34,7 @@ from multiprocessing import Pool
 import itertools
 
 ## from here
-from cloudphinder.io_tools import parse_filepath, make_input, read_particle_data, parse_particle_data, computeAndDump, SaveArrayDict
+from cloudphinder.io_tools import parse_filepath,  read_particle_data, parse_particle_data, computeAndDump, SaveArrayDict
 from cloudphinder.clump_tools import ComputeGroups
 
 def CloudPhind(filepath,options,particle_data=None,loud=True):
