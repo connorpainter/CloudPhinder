@@ -13,6 +13,8 @@ import pytreegrav as pytreegrav
 ## global variables
 potential_mode = False
 G_codeunits = 4.301e4
+FRAC_AVIR_CHECK = 1e-4
+TREEFORCE_THETA = 0.5
 
 
 ######## Energy functions ########
@@ -34,7 +36,7 @@ def KE(c, x, m, h, v, u):
 
 def PE(c, x, m, h, v, u):
     phic = pytreegrav.Potential(
-        x[c], m[c], h[c], G=G_codeunits, theta=0.7  # , parallel=True
+        x[c], m[c], h[c], G=G_codeunits, theta=TREEFORCE_THETA, parallel=True
     )
     return 0.5 * (phic * m[c]).sum()
 
@@ -51,10 +53,10 @@ def InteractionEnergy(
 
     xb, mb, hb = x[group_b], m[group_b], h[group_b]
     num_in_b = len(group_b)
-    parallel = num_in_b > 100
     if tree_a:
         ## evaluate potential from the particles in the tree
         # print(len(group_a))
+        parallel = num_in_b > 100
         phi = pytreegrav.PotentialTarget(
             xb,
             None,  ## pos source
@@ -62,7 +64,7 @@ def InteractionEnergy(
             hb,
             tree=tree_a,  ## source tree
             G=G_codeunits,
-            theta=0.7,
+            theta=TREEFORCE_THETA,
             parallel=parallel,
         )
 
@@ -79,7 +81,7 @@ def InteractionEnergy(
         ## have to brute force all the particles
         xa, ma, ha = x[group_a], m[group_a], h[group_a]
         phi = pytreegrav.PotentialTarget(
-            xb, xa, ma, hb, ha, G=G_codeunits, parallel=parallel
+            xb, xa, ma, hb, ha, G=G_codeunits, parallel=True
         )
     potential_energy = (mb * phi).sum()
     return potential_energy
@@ -116,7 +118,7 @@ def EnergyIncrement(
             htarget,
             None,
             tree=tree,
-            theta=0.7,
+            theta=TREEFORCE_THETA,
             G=G_codeunits,
             # parallel=True,  ## source pos and mass
         )
@@ -138,7 +140,6 @@ def PE_Increment(i, c, m, x, v, u, v_com):
 
 
 ######## Grouping functions ########
-# @profile
 def ParticleGroups(
     x, m, rho, phi, h, u, v, ntree, alpha_crit, cluster_ngb=32, rmax=1e100
 ):
@@ -160,7 +161,6 @@ def ParticleGroups(
     masses = {}
     bound_groups = {}
     assigned_group = -np.ones(len(x), dtype=np.int32)
-
     assigned_bound_group = -np.ones(len(x), dtype=np.int32)
     largest_assigned_group = -np.ones(len(x), dtype=np.int32)
 
@@ -292,22 +292,23 @@ def ParticleGroups(
                     * group_KE[group_index_a]
                     / np.abs(group_energy[group_index_a] - group_KE[group_index_a])
                 )
-                # R = avir / VirialParameter(group_ab, x, m, h, v, u)
-                # if abs(np.log(R)) > 1:
-                #     print(
-                #         "1",
-                #         avir,
-                #         VirialParameter(group_ab, x, m, h, v, u),
-                #         group_KE[group_index_a],
-                #         KE(group_ab, x, m, h, v, u),
-                #         group_energy[group_index_a] - group_KE[group_index_a],
-                #         PE(group_ab, x, m, h, v, u),
-                #     )
-                #     exit()
+                if np.random.rand() < FRAC_AVIR_CHECK:
+                    R = avir / VirialParameter(group_ab, x, m, h, v, u)
+                    if abs(np.log(R)) > 0.2:
+                        print(
+                            "1",
+                            avir,
+                            VirialParameter(group_ab, x, m, h, v, u),
+                            group_KE[group_index_a],
+                            KE(group_ab, x, m, h, v, u),
+                            group_energy[group_index_a] - group_KE[group_index_a],
+                            PE(group_ab, x, m, h, v, u),
+                        )
+                        print("Large error found in virial parameter! Exiting...")
+                        exit()
                 if avir < alpha_crit:
                     largest_assigned_group[group_ab] = len(group_ab)
                     assigned_bound_group[group_ab] = group_index_a
-                    # print(avir, alpha_crit, VirialParameter(group_ab, x, m, h, v, u))
 
                 for d in (
                     groups,
@@ -344,22 +345,23 @@ def ParticleGroups(
                 particles_since_last_tree[g],
             )
             avir = abs(2 * group_KE[g] / np.abs(group_energy[g] - group_KE[g]))
-            # R = avir / VirialParameter(groups[g], x, m, h, v, u)
-            # if abs(np.log(R)) > 1:
-            #     print(
-            #         "2",
-            #         avir,
-            #         VirialParameter(groups[g], x, m, h, v, u),
-            #         group_KE[g],
-            #         KE(groups[g], x, m, h, v, u),
-            #         group_energy[g] - group_KE[g],
-            #         PE(groups[g], x, m, h, v, u),
-            #     )
-            #     exit()
+            if np.random.rand() < FRAC_AVIR_CHECK:
+                R = avir / VirialParameter(groups[g], x, m, h, v, u)
+                if abs(np.log(R)) > 1:
+                    print(
+                        "2",
+                        avir,
+                        VirialParameter(groups[g], x, m, h, v, u),
+                        group_KE[g],
+                        KE(groups[g], x, m, h, v, u),
+                        group_energy[g] - group_KE[g],
+                        PE(groups[g], x, m, h, v, u),
+                    )
+                    print("Large error found in virial parameter! Exiting...")
+                    exit()
             if avir < alpha_crit:
                 largest_assigned_group[i] = len(groups[g])
                 assigned_bound_group[groups[g]] = g
-                # print(avir, alpha_crit, VirialParameter(groups[g], x, m, h, v, u))
 
             v_COM[g] = (m[i] * v[i] + mgroup * v_COM[g]) / (m[i] + mgroup)
             masses[g] += m[i]
@@ -372,7 +374,7 @@ def ParticleGroups(
             max_group_size = max(max_group_size, len(groups[g]))
 
     # Now assign particles to their respective bound groups
-    print((assigned_bound_group == -1).sum() / len(assigned_bound_group))
+    # print((assigned_bound_group == -1).sum() / len(assigned_bound_group))
     for i, ai in enumerate(assigned_bound_group):
         # ai = assigned_bound_group[i]
         if ai < 0:
@@ -404,7 +406,7 @@ def ComputeGroups(
 ):
 
     ## cast arrays to double precision
-    (x, m, rho, phi, hsml, u, v, zz) = (
+    (x, m, rho, phi, hsml, u, v) = (
         np.float64(x),
         np.float64(m),
         np.float64(rho),
@@ -412,7 +414,6 @@ def ComputeGroups(
         np.float64(hsml),
         np.float64(u),
         np.float64(v),
-        np.float64(zz),
     )
 
     # make sure no two particles are at the same position
@@ -421,13 +422,13 @@ def ComputeGroups(
 
     t = time()
     groups, bound_groups, assigned_group = ParticleGroups(
-        x / 1e3,
-        m / 1e10,
+        x,
+        m,
         rho,
         phi,
-        hsml / 1e3,
-        u / 1e6,
-        v / 1e6,
+        hsml,
+        u,
+        v,
         ntree=ntree,
         alpha_crit=alpha_crit,
         cluster_ngb=cluster_ngb,

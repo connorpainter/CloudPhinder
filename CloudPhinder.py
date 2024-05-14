@@ -17,7 +17,7 @@ Options:
    --fuzz=<L>                 Randomly perturb particle positions by this small fraction to avoid problems with particles at the same position in 32bit floating point precision data [default: 0]
    --alpha_crit=<f>           Critical virial parameter to be considered bound [default: 2.]
    --np=<N>                   Number of snapshots to run in parallel [default: 1]
-   --ntree=<N>                Number of particles in a group before a BH-tree should be constructed to compute its properties [default: 10000]
+   --ntree=<N>                Number of particles in a group before a BH-tree should be constructed to compute its properties [default: 1000]
    --overwrite                Whether to overwrite pre-existing clouds files
    --units_already_physical   Whether to convert units to physical from comoving
    --starforge_units 
@@ -112,7 +112,7 @@ def CloudPhind(filepath, options, particle_data=None, loud=True):
 
     if new_particle_data is None:
         return False
-
+    print(v.shape, v[:, 0], v[:, 0].std())
     ## call the cloud finder itself
     groups, bound_groups, assigned_groups = ComputeGroups(
         x,

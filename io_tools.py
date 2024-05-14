@@ -177,7 +177,6 @@ def read_particle_data(
         return dummy_return
 
     # now we refine by particle density, by applying a density mask `criteria`
-    criteria = np.ones(npart, dtype=bool)
     if "Density" in keys:
         rho = load_from_snapshot.load_from_snapshot(
             "Density",
@@ -222,9 +221,10 @@ def read_particle_data(
                 snapdir,
                 snapnum,
                 snapshot_name=snapname,
-                particle_mask=criteria,
                 units_to_physical=(not units_already_physical),
             )
+            # if k == "Velocities":
+            # print(particle_data[k])
 
     return particle_data
 
@@ -279,7 +279,7 @@ def parse_particle_data(particle_data, nmin, cluster_ngb):
     criteria = np.arange(len(rho))[rho * 404 * 0.74 > nmin]
 
     print(
-        "%g particles denser than %g cm^-3" % (criteria.size, nmin)
+        f"{criteria.size} particles denser than {nmin} cm^-3"
     )  # (np.sum(rho*147.7>nmin), nmin))
     if not criteria.size > cluster_ngb:
         print("Not enough /dense/ particles, exiting...")
@@ -305,7 +305,7 @@ def parse_particle_data(particle_data, nmin, cluster_ngb):
         "Density",
         "SmoothingLength",
         "InternalEnergy",
-        "Velocity",
+        "Velocities",
         "Metallicity",
         "StarFormationRate",
     ]
@@ -326,7 +326,6 @@ def computeAndDump(
     bound_groups,
     hdf5_outfilename,
     dat_outfilename,
-    overwrite,
 ):
 
     print("Done grouping. Computing group properties...")
