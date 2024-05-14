@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """                                                                            
-Algorithm that identifies the largest possible self-gravitating structures of a certain particle type. This, newer version relies on the load_from_snapshot routine from GIZMO.
+Algorithm that identifies the largest possible self-gravitating iso-density contours
+of a certain particle type. This newer version relies on the load_from_snapshot routine from GIZMO.
 
 Usage: CloudPhinder.py <snapshots> ... [options]
 
@@ -34,36 +35,50 @@ from multiprocessing import Pool
 import itertools
 
 ## from here
-from cloudphinder.io_tools import parse_filepath,  read_particle_data, parse_particle_data, computeAndDump, SaveArrayDict
+from cloudphinder.io_tools import (
+    parse_filepath,
+    read_particle_data,
+    parse_particle_data,
+    computeAndDump,
+    SaveArrayDict,
+)
 from cloudphinder.clump_tools import ComputeGroups
 
-def CloudPhind(filepath,options,particle_data=None,loud=True):
+
+def CloudPhind(filepath, options, particle_data=None, loud=True):
     """
     Input:
     filepath - path to snapshot data, used to determine output filename
         so it is not optional when particle_data is not None.
     options - CLI arguments defined by CloudPhinder.__doc__
-    particle_data=None - pre-loaded particle data in a dictionary matching 
+    particle_data=None - pre-loaded particle data in a dictionary matching
         GIZMO keys.
     loud=True - flag to print to the console
     """
- 
+
     ## parses filepath and reformats outputfolder if necessary
-    snapnum, snapdir, snapname, outputfolder = parse_filepath(filepath,options["--outputfolder"])
+    snapnum, snapdir, snapname, outputfolder = parse_filepath(
+        filepath, options["--outputfolder"]
+    )
 
     ## skip if the file was not parseable
-    if snapnum is None: return False
+    if snapnum is None:
+        return False
 
     ## generate output filenames
     nmin = float(options["--nmin"])
     alpha_crit = float(options["--alpha_crit"])
 
-    hdf5_outfilename = outputfolder + '/'+ "Clouds_%s_n%g_alpha%g.hdf5"%(snapnum, nmin, alpha_crit)
-    dat_outfilename = outputfolder + '/' +"bound_%s_n%g_alpha%g.dat"%(snapnum, nmin,alpha_crit)    
+    hdf5_outfilename = (
+        outputfolder + "/" + "Clouds_%s_n%g_alpha%g.hdf5" % (snapnum, nmin, alpha_crit)
+    )
+    dat_outfilename = (
+        outputfolder + "/" + "bound_%s_n%g_alpha%g.dat" % (snapnum, nmin, alpha_crit)
+    )
 
     ## check if output already exists, if we aren't being asked to overwrite, short circuit
     overwrite = options["--overwrite"]
-    if path.isfile(dat_outfilename) and not overwrite: 
+    if path.isfile(dat_outfilename) and not overwrite:
         if loud:
             print("File already exists and --overwrite=False, exiting.")
         return False
@@ -83,59 +98,72 @@ def CloudPhind(filepath,options,particle_data=None,loud=True):
             cluster_ngb,
             softening=float(options["--softening"]),
             units_already_physical=bool(options["--units_already_physical"]),
-            )
+        )
 
         ## skip this snapshot, there probably weren't enough particles
-        if particle_data is None: return False
+        if particle_data is None:
+            return False
 
     ## unpack the particle data
-    (new_particle_data,
-    x,m,rho,
-    hsml,u,v,
-    zz,sfr) = parse_particle_data(particle_data,nmin,cluster_ngb)
+    (new_particle_data, x, m, rho, hsml, u, v, zz, sfr) = parse_particle_data(
+        particle_data, nmin, cluster_ngb
+    )
     phi = np.zeros_like(rho)
 
-    if new_particle_data is None: return False
+    if new_particle_data is None:
+        return False
 
     ## call the cloud finder itself
     groups, bound_groups, assigned_groups = ComputeGroups(
-        x,m,rho,
-        phi,hsml,u,
-        v,zz,sfr,
+        x,
+        m,
+        rho,
+        phi,
+        hsml,
+        u,
+        v,
+        zz,
+        sfr,
         cluster_ngb=cluster_ngb,
         max_linking_length=float(options["--max_linking_length"]),
         nmin=nmin,
-        ntree = int(options["--ntree"]),
+        ntree=int(options["--ntree"]),
         alpha_crit=alpha_crit,
-        )
+    )
 
     ## compute some basic properties of the clouds and dump them and
     ##  the particle data to disk
     computeAndDump(
-        x,m,hsml,v,u,
+        x,
+        m,
+        hsml,
+        v,
+        u,
         new_particle_data,
         ptype,
         bound_groups,
         hdf5_outfilename,
         dat_outfilename,
-        overwrite)
+        overwrite,
+    )
 
     return True
 
+
 def main(options):
 
-    nproc=int(options["--np"])
+    nproc = int(options["--np"])
 
-    snappaths = [p  for p in options["<snapshots>"]] 
-    if nproc==1:
+    snappaths = [p for p in options["<snapshots>"]]
+    if nproc == 1:
         for f in snappaths:
-            CloudPhind(f,options)
+            CloudPhind(f, options)
     else:
-        argss = zip(snappaths,itertools.repeat(options)) 
+        argss = zip(snappaths, itertools.repeat(options))
         with Pool(nproc) as my_pool:
             my_pool.starmap(CloudPhind, argss, chunksize=1)
 
-if __name__ == "__main__": 
+
+if __name__ == "__main__":
     options = docopt(__doc__)
     main(options)
-    
