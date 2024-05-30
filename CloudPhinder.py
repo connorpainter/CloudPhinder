@@ -31,7 +31,7 @@ import numpy as np
 
 from docopt import docopt
 
-from multiprocessing import Pool
+from multiprocessing import Pool,cpu_count
 import itertools
 
 ## from here
@@ -43,7 +43,7 @@ from cloudphinder.io_tools import (
     SaveArrayDict,
 )
 from cloudphinder.clump_tools import ComputeGroups
-
+from numba import set_num_threads
 
 def CloudPhind(filepath, options, particle_data=None, loud=True):
     """
@@ -144,7 +144,6 @@ def CloudPhind(filepath, options, particle_data=None, loud=True):
         bound_groups,
         hdf5_outfilename,
         dat_outfilename,
-        overwrite,
     )
 
     return True
@@ -160,6 +159,7 @@ def main(options):
             CloudPhind(f, options)
     else:
         argss = zip(snappaths, itertools.repeat(options))
+        set_num_threads(cpu_count() // nproc)
         with Pool(nproc) as my_pool:
             my_pool.starmap(CloudPhind, argss, chunksize=1)
 
