@@ -106,13 +106,13 @@ def CloudPhind(filepath, options, particle_data=None, loud=True):
 
     ## unpack the particle data
     (new_particle_data, x, m, rho, hsml, u, v, zz, sfr) = parse_particle_data(
-        particle_data, nmin, cluster_ngb
+        particle_data, nmin, cluster_ngb, softening=float(options["--softening"])
     )
     phi = np.zeros_like(rho)
 
     if new_particle_data is None:
         return False
-    print(v.shape, v[:, 0], v[:, 0].std())
+    
     ## call the cloud finder itself
     groups, bound_groups, assigned_groups = ComputeGroups(
         x,

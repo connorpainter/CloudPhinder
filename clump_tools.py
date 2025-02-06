@@ -147,7 +147,7 @@ def ParticleGroups(
     if not potential_mode:
         phi = -rho
     ngbdist, ngb = cKDTree(x).query(
-        x, min(cluster_ngb, len(x)), distance_upper_bound=min(rmax, h.max())
+        x, min(cluster_ngb, len(x)), distance_upper_bound=rmax
     )
 
     max_group_size = 0

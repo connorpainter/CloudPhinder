@@ -10,7 +10,7 @@ from meshoid import Meshoid
 
 ## from GIZMO
 try:
-    import load_from_snapshot  # routine to load snapshots from GIZMo files
+    from . import load_from_snapshot  # routine to load snapshots from GIZMo files
 except ImportError:
     print("Missing: load_from_snapshot from GIZMO scripts directory.")
 
@@ -229,7 +229,7 @@ def read_particle_data(
     return particle_data
 
 
-def parse_particle_data(particle_data, nmin, cluster_ngb):
+def parse_particle_data(particle_data, nmin, cluster_ngb, softening=1e-5):
     """Unpack particle data into individual variables."""
 
     dummy_return = None
