@@ -310,6 +310,7 @@ def parse_particle_data(particle_data, nmin, cluster_ngb, softening=1e-5):
         "StarFormationRate",
     ]
     new_particle_data = dict(zip(keys, values))
+    new_particle_data["Indices"] = np.arange(len(particle_data["ParticleIDs"]))[criteria][rho_order]
     new_particle_data["ParticleIDs"] = particle_data["ParticleIDs"][criteria][rho_order]
     return tuple([new_particle_data] + values)
 
